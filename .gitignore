@@ -1,0 +1,39 @@
+# Environment & Secrets
+.env
+*.env
+.env.*
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Data & Outputs (exclude from git, keep locally)
+data/
+logs/
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+.DS_Store
+.vscode/
+.idea/
+
+# Archives
+*.gz
+*.zip
+*.tar
+
+# SQLite databases (can be regenerated)
+*.db
+*.sqlite
+*.sqlite3
+
+# Test files
+test_*.py
+*_test.py
