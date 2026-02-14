@@ -116,7 +116,7 @@ def main():
         
         # Also write to "latest" symlink for easy access
         latest_link = OUTBOX_DIR / 'digest_latest.txt'
-        if latest_link.exists():
+        if latest_link.exists() or latest_link.is_symlink():
             latest_link.unlink()
         latest_link.symlink_to(outbox_file.name)
         
