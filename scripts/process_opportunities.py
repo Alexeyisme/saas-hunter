@@ -32,12 +32,12 @@ LLM_ENABLED = api_key and api_key not in ['your_openrouter_key_here', '', 'your_
 if LLM_ENABLED:
     try:
         from llm_scorer import enhanced_score
-        logger.info("LLM scoring enabled with OpenRouter")
+        logger.info("LLM scoring enabled with OpenRouter (Claude Haiku)")
     except ImportError:
         logger.warning("LLM scorer module not found, falling back to rule-based")
         LLM_ENABLED = False
 else:
-    logger.info("Rule-based scoring only (LLM disabled)")
+    logger.info("Rule-based scoring only (LLM disabled - set OPENROUTER_API_KEY to enable)")
 
 # Paths
 DATA_DIR = Path(__file__).parent.parent / 'data'
