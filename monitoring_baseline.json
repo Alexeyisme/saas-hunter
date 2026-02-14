@@ -1,0 +1,36 @@
+{
+  "monitoring_started": "2026-02-14T22:01:00Z",
+  "monitoring_period_hours": 24,
+  "baseline": {
+    "total_ids_tracked": 265,
+    "opportunities_today": 53,
+    "score_avg": 35.5,
+    "score_max": 60,
+    "high_quality_count": 1,
+    "llm_triggers": 0
+  },
+  "expected_runs": {
+    "reddit": 8,
+    "hackernews": 6,
+    "github": 1,
+    "processing": 4,
+    "digest": 1
+  },
+  "expected_volume": {
+    "min_opportunities": 40,
+    "max_opportunities": 83,
+    "likely_range": "50-70"
+  },
+  "success_criteria": {
+    "collection_success_rate": ">95%",
+    "validation_pass_rate": "100%",
+    "digest_generated": true,
+    "no_errors": true
+  },
+  "files_to_monitor": [
+    "/root/saas-hunter/data/raw/",
+    "/root/saas-hunter/data/processed/opportunities_20260215.jsonl",
+    "/root/saas-hunter/data/digests/digest_20260215.md",
+    "/root/saas-hunter/logs/"
+  ]
+}
