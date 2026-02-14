@@ -1,0 +1,96 @@
+{
+  "version": "1.0",
+  "description": "SaaS Hunter scoring configuration - tune these weights to optimize opportunity detection",
+  
+  "source_weights": {
+    "github": 20,
+    "hackernews": 15,
+    "reddit:smallbusiness": 12,
+    "reddit:sysadmin": 12,
+    "reddit:startups": 12,
+    "reddit:freelance": 12,
+    "reddit:sales": 10,
+    "reddit:marketing": 10,
+    "reddit:webdev": 10,
+    "reddit:saas": 8,
+    "reddit:entrepreneur": 8,
+    "reddit:default": 8
+  },
+  
+  "engagement_weights": {
+    "github_reaction_multiplier": 2,
+    "github_reaction_max": 15,
+    "comments_max": 10,
+    "hackernews_score_max": 10
+  },
+  
+  "pain_point_signals": {
+    "strong_pain": {
+      "phrases": ["sick of", "frustrated", "hate", "tired of", "annoyed by", "fed up"],
+      "score": 10
+    },
+    "willingness_to_pay": {
+      "phrases": ["would pay", "expensive", "pricing", "cost", "price", "too much", "overpriced"],
+      "score": 10
+    },
+    "seeking_alternatives": {
+      "phrases": ["alternative to", "better than", "instead of", "replace", "switch from"],
+      "score": 8
+    }
+  },
+  
+  "specificity_scoring": {
+    "long_body_threshold": 300,
+    "long_body_score": 10,
+    "medium_body_threshold": 150,
+    "medium_body_score": 5,
+    "contains_numbers_score": 5
+  },
+  
+  "competition_signals": {
+    "mentions_competitor": {
+      "phrases": ["vs", "compared to", "like", "similar to"],
+      "score": 5
+    },
+    "gaps_mentioned": {
+      "phrases": ["missing", "doesn't have", "lacks", "limited", "no support for"],
+      "score": 8
+    }
+  },
+  
+  "market_signals": {
+    "business_context": {
+      "phrases": ["business", "company", "team", "clients", "customers"],
+      "score": 5
+    },
+    "scale_indicators": {
+      "phrases": ["users", "subscribers", "revenue", "growth", "scaling"],
+      "score": 5
+    }
+  },
+  
+  "llm_config": {
+    "enabled": true,
+    "threshold": 45,
+    "weight": 0.4,
+    "base_weight": 0.6,
+    "model": "anthropic/claude-3-haiku"
+  },
+  
+  "thresholds": {
+    "minimum_score": 40,
+    "high_quality": 60,
+    "top_tier": 80,
+    "digest_top_n": 10
+  },
+  
+  "notes": {
+    "source_weights": "Max 20 points - how credible is the source",
+    "engagement_weights": "Max 25 points total from reactions/comments/score",
+    "pain_point_signals": "Max 20 points - clarity of problem",
+    "specificity_scoring": "Max 15 points - detail level",
+    "competition_signals": "Max 10 points - market awareness",
+    "market_signals": "Max 10 points - business viability",
+    "total_possible": "100 points max"
+  }
+}

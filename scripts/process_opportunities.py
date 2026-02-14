@@ -4,11 +4,32 @@ Process Opportunities - Score, deduplicate, and enrich
 """
 import json
 import sys
+import os
 from pathlib import Path
 from datetime import datetime, timedelta
 from fuzzywuzzy import fuzz
 from usage_tracker import UsageTracker
 from utils import setup_logging
+
+# Use config-driven scoring
+try:
+    from scoring import score_opportunity
+    SCORING_IMPORTED = True
+except ImportError:
+    SCORING_IMPORTED = False
+    # Fallback will be defined below
+
+# Check if LLM scoring is enabled
+LLM_ENABLED = bool(os.getenv('OPENROUTER_API_KEY'))
+if LLM_ENABLED:
+    try:
+        from llm_scorer import enhanced_score
+        print("✓ LLM scoring enabled")
+    except ImportError:
+        print("⚠ LLM scorer not found, falling back to rule-based")
+        LLM_ENABLED = False
+else:
+    print("✓ Rule-based scoring only (set OPENROUTER_API_KEY to enable LLM)")
 
 # Setup logging
 LOG_DIR = Path(__file__).parent.parent / 'logs'
@@ -233,10 +254,25 @@ def main():
         logger.info(f"Total opportunities loaded: {len(all_opps)}")
         
         # 3. Score each
+        llm_enhanced_count = 0
         for opp in all_opps:
-            opp['score'] = score_opportunity(opp)
+            base_score = score_opportunity(opp)
+            
+            # Apply LLM enhancement if enabled and score is promising
+            if LLM_ENABLED and base_score >= 45:
+                try:
+                    final_score, llm_data = enhanced_score(base_score, opp)
+                    opp['score'] = final_score
+                    if llm_data:
+                        opp['llm_analysis'] = llm_data
+                        llm_enhanced_count += 1
+                except Exception as e:
+                    logger.warning(f"LLM scoring failed for {opp.get('id')}: {e}")
+                    opp['score'] = base_score
+            else:
+                opp['score'] = base_score
         
-        logger.info(f"Scored {len(all_opps)} opportunities")
+        logger.info(f"Scored {len(all_opps)} opportunities ({llm_enhanced_count} LLM-enhanced)")
         
         # 4. Deduplicate
         unique_opps = deduplicate_opportunities(all_opps)

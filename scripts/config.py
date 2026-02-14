@@ -36,9 +36,12 @@ GITHUB_HOURS_BACK = int(os.getenv('GITHUB_HOURS_BACK', COLLECTION_HOURS_BACK))
 
 # Reddit Settings
 REDDIT_SUBREDDITS = [
-    'SaaS', 'Entrepreneur', 'startups', 'smallbusiness', 'productivity',
-    'webdev', 'sysadmin', 'marketing', 'ecommerce', 'nocode', 'lowcode',
-    'saasmarketing'
+    # Current sources
+    'SaaS', 'Entrepreneur', 'smallbusiness', 'sysadmin',
+    # Phase 1 expansion - high signal sources
+    'startups', 'freelance', 'sales', 'marketing', 'webdev',
+    # Existing
+    'productivity', 'ecommerce', 'nocode', 'lowcode', 'saasmarketing'
 ]
 
 REDDIT_PAIN_KEYWORDS = [
