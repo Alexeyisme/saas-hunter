@@ -8,10 +8,10 @@
 
 ## 📊 Quick Stats
 
-- **Sources:** 12 subreddits, 13 GitHub repos, Ask HN
+- **Sources:** 14 subreddits, 11 GitHub repos, Ask HN
 - **Cost:** $0/month (within free tiers)
-- **Collection Window:** 6-24 hours (source-dependent)
-- **Last Tested:** 2026-02-08 — ✅ All collectors operational
+- **Collection:** Autonomous via OpenClaw cron
+- **Status:** ✅ Production (monitoring active since 2026-02-14)
 
 ---
 
@@ -20,18 +20,24 @@
 ```
 saas-hunter/
 ├── scripts/
-│   ├── config.py              # Centralized configuration
-│   ├── utils.py               # Shared utilities (dedup, logging, normalization)
-│   ├── reddit_monitor.py      # Reddit RSS collector (free)
-│   ├── github_monitor.py      # GitHub API collector (authenticated)
-│   └── hackernews_monitor.py  # HN Algolia API collector (free)
+│   ├── config.py                    # Centralized configuration
+│   ├── utils.py                     # Shared utilities
+│   ├── reddit_monitor.py            # Reddit RSS collector
+│   ├── github_monitor.py            # GitHub API collector
+│   ├── hackernews_monitor.py        # HN Algolia collector
+│   ├── process_opportunities.py     # Scoring + dedup pipeline
+│   ├── generate_digest.py           # Daily digest generator
+│   └── send_telegram_openclaw.py    # Telegram delivery queue
 ├── data/
-│   ├── raw/                   # Timestamped JSON outputs
-│   ├── processed/             # Analyzed/scored opportunities (TBD)
-│   └── seen_ids.json          # Persistent duplicate tracking
-├── logs/                      # Per-source execution logs
-├── venv/                      # Python virtual environment
-└── .env                       # API keys and config overrides
+│   ├── raw/                         # Timestamped collector outputs
+│   ├── processed/                   # Scored opportunities (JSONL)
+│   ├── digests/                     # Daily markdown summaries
+│   ├── telegram_outbox/             # Queued digests for delivery
+│   └── seen_ids.json                # Deduplication tracking
+├── logs/                            # Execution logs
+├── scoring_config.json              # Scoring weights (v1.4-balanced)
+├── venv/                            # Python environment
+└── .env                             # API keys and settings
 ```
 
 ---
@@ -44,204 +50,360 @@ saas-hunter/
 cd ~/saas-hunter
 python3 -m venv venv
 source venv/bin/activate
-pip install feedparser requests beautifulsoup4 python-dotenv
+pip install -r requirements.txt
 ```
+
+Requirements:
+- feedparser
+- requests
+- beautifulsoup4
+- python-dotenv
 
 ### 2. Configure Environment
 
-Edit `.env` and add your GitHub token:
+Copy `.env.example` to `.env` and configure:
 
 ```bash
+# GitHub token (required)
 GITHUB_TOKEN=ghp_your_token_here
+
+# OpenRouter API for LLM scoring (optional)
+OPENROUTER_API_KEY=sk-or-v1-your_key_here
+
+# Collection windows
+GITHUB_HOURS_BACK=168  # 1 week
+COLLECTION_HOURS_BACK=6  # Reddit/HN
 ```
 
-Get a token at: https://github.com/settings/tokens (needs `public_repo` scope)
+Get GitHub token: https://github.com/settings/tokens (needs `public_repo` scope)
 
 ### 3. Test Collectors
 
 ```bash
 cd scripts
 
-# Reddit (RSS-based, no auth)
+# Reddit (RSS, no auth required)
 ../venv/bin/python3 reddit_monitor.py
 
 # GitHub (requires token)
 ../venv/bin/python3 github_monitor.py
 
-# Hacker News (free API)
+# HackerNews (free API)
 ../venv/bin/python3 hackernews_monitor.py
+
+# Processing pipeline
+../venv/bin/python3 process_opportunities.py
+
+# Digest generation
+../venv/bin/python3 generate_digest.py
 ```
 
 ---
 
-## ⚙️ Configuration
+## 🤖 Autonomous Operation (OpenClaw)
 
-Edit `.env` to customize:
+The system runs autonomously via OpenClaw cron jobs:
 
-```bash
-# Collection Windows
-COLLECTION_HOURS_BACK=6      # Reddit & HN lookback
-GITHUB_HOURS_BACK=24         # GitHub lookback (wider window)
+### Cron Schedule
 
-# Scoring & Filtering
-MIN_OPPORTUNITY_SCORE=50     # Minimum score to include
-DIGEST_TOP_N=5               # Top N for daily digest
+```
+Reddit Monitor:       Every 3 hours
+HackerNews Monitor:   Every 4 hours
+GitHub Monitor:       Daily at 06:00 UTC
+Process Pipeline:     Every 6 hours
+Daily Digest:         Daily at 08:00 UTC
 ```
 
-Edit `scripts/config.py` for:
-- **Subreddits:** `REDDIT_SUBREDDITS` list
-- **GitHub repos:** `GITHUB_REPOSITORIES` list
-- **Keywords:** `REDDIT_PAIN_KEYWORDS`, `HN_ASK_KEYWORDS`
+### Delivery Flow
+
+1. Collectors gather opportunities → `data/raw/`
+2. Processor scores & deduplicates → `data/processed/`
+3. Digest generator creates markdown → `data/digests/`
+4. Telegram queue created → `data/telegram_outbox/`
+5. OpenClaw heartbeat delivers via Telegram
+
+**No manual intervention required** — system is fully autonomous.
 
 ---
 
-## 📅 Cron Schedule (Recommended)
+## 📊 Data Pipeline
 
-**Optimized for signal quality and API efficiency:**
+### 1. Collection Layer
 
-```cron
-# Reddit - every 3 hours (free, high volume)
-0 */3 * * * cd ~/saas-hunter/scripts && ../venv/bin/python3 reddit_monitor.py >> ~/saas-hunter/logs/cron.log 2>&1
+**Reddit (14 subreddits):**
+- SaaS, Entrepreneur, startups, smallbusiness, productivity
+- webdev, sysadmin, marketing, ecommerce, freelance
+- sales, nocode, lowcode, saasmarketing
+- **Filter:** 24 pain-point keywords
+- **Volume:** 5-15 opps per run
 
-# Hacker News - every 4 hours (free, moderate volume)
-0 */4 * * * cd ~/saas-hunter/scripts && ../venv/bin/python3 hackernews_monitor.py >> ~/saas-hunter/logs/cron.log 2>&1
+**GitHub (11 repositories):**
+- supabase, posthog, n8n, plausible, langchain
+- excalidraw, trpc, formbricks, documenso, nocodb, directus
+- **Filter:** Issues with reactions ≥2, last 7 days
+- **Volume:** 0-5 opps per week
 
-# GitHub - daily at 6 AM (1-week lookback, dedup handles overlaps)
-0 6 * * * cd ~/saas-hunter/scripts && ../venv/bin/python3 github_monitor.py >> ~/saas-hunter/logs/cron.log 2>&1
-```
+**HackerNews:**
+- **Filter:** "Ask HN" posts with keywords or 5+ comments
+- **Volume:** 0-3 opps per run
 
-**Why weekly GitHub?** Testing showed 24-hour windows yield 0 results. Weekly collection with reactions:>2 produces 2-4 quality opportunities.
+### 2. Processing Layer
+
+**Features:**
+- Data validation (schema checks)
+- Scoring engine (config-driven, 0-100 points)
+- Fuzzy deduplication (75% similarity threshold)
+- LLM enhancement (Claude Haiku, opps ≥45 score)
+- Domain classification
+
+**Scoring Components:**
+- Source credibility (0-20 pts)
+- Engagement signals (0-25 pts)
+- Pain point clarity (0-20 pts)
+- Specificity (0-15 pts)
+- Freshness (0-10 pts)
+- Niche fit (0-10 pts)
+
+### 3. Delivery Layer
+
+**Daily Digest Format:**
+- Top 3 opportunities (formatted for Telegram)
+- Score-based ranking
+- Source links
+- Summary stats
+
+**Delivery Method:**
+- Queued in `telegram_outbox/`
+- Picked up by OpenClaw heartbeat
+- Sent via message tool to Telegram
 
 ---
 
-## 📁 Output Format
+## 📁 Output Formats
 
-All collectors produce normalized JSON:
-
+### Raw Collection (JSON)
 ```json
 {
-  "scan_time": "2026-02-08T17:06:57.008655",
-  "total_opportunities": 18,
-  "sources_scanned": ["SaaS", "Entrepreneur", "..."],
-  "method": "RSS (no API)",
-  "hours_back": 6,
+  "scan_time": "2026-02-14T21:54:54Z",
+  "total_opportunities": 5,
+  "sources_scanned": ["SaaS", "Entrepreneur"],
   "opportunities": [
     {
-      "source_id": "1qzd3na",
+      "source_id": "1r3tube",
       "source": "reddit:SaaS",
-      "title": "Looking for marketing/account conversion advice",
-      "body": "Been working in my industry for 20 years...",
-      "url": "https://www.reddit.com/r/SaaS/comments/...",
-      "published_utc": "2026-02-08T16:18:37",
-      "engagement_data": {
-        "keywords": ["pain point"]
-      },
-      "collected_at": "2026-02-08T17:06:36.959610"
+      "title": "Recommendations for distribution...",
+      "body": "Hey guys. I'm exhausted...",
+      "url": "https://reddit.com/r/SaaS/...",
+      "published_utc": "2026-02-14T12:00:00",
+      "engagement_data": {"keywords": ["tired of"]}
     }
   ]
 }
 ```
 
----
+### Processed Opportunities (JSONL)
+```json
+{
+  "opportunity_id": "20260214205314-reddit-SaaS-...",
+  "source": "reddit:SaaS",
+  "title": "...",
+  "body": "...",
+  "score": 60,
+  "domain": "marketing",
+  "llm_enhanced": false,
+  "processed_at": "2026-02-14T20:53:14Z"
+}
+```
 
-## 🔍 Data Sources
+### Daily Digest (Markdown)
+```markdown
+# SaaS Opportunities — February 14, 2026
 
-### Reddit (RSS)
-- **Subreddits:** r/SaaS, r/Entrepreneur, r/startups, r/smallbusiness, r/productivity, r/webdev, r/sysadmin, r/marketing, r/ecommerce, r/nocode, r/lowcode, r/saasmarketing
-- **Filter:** 24 pain-point keywords ("looking for a tool", "frustrated with", "willing to pay", etc.)
-- **Cost:** Free
+## ⭐ High Potential (Score 60-79)
 
-### GitHub (Search API)
-- **Repos:** supabase, posthog, n8n, plausible, langchain, excalidraw, trpc, formbricks, documenso, nocodb, directus
-- **Filter:** Issues with reactions:>2, created in last 7 days (reactions = validation)
-- **Collection:** Weekly (reactions need time to accumulate)
-- **Cost:** Free (5,000 req/hour authenticated)
+### 1. Title (Score: 60)
+**Source:** reddit:SaaS | **Domain:** marketing
+**Link:** https://...
 
-### Hacker News (Algolia)
-- **Filter:** "Ask HN" posts matching 20 keywords OR >5 comments
-- **Lookback:** 6 hours
-- **Cost:** Free
-
----
-
-## 📊 Typical Results
-
-| Source | Frequency | Window | Opportunities | Time |
-|--------|-----------|--------|--------------|------|
-| Reddit | Every 3h | 6h | 15-25/day | ~20s |
-| HN | Every 4h | 6h | 3-8/day | <1s |
-| GitHub | Weekly | 7d | 2-4/week | ~45s |
-| **Total** | | | **~30/day** | |
+## 💡 Worth Exploring (Score 40-59)
+...
+```
 
 ---
 
-## 🔧 Utilities
+## 🔧 Configuration
 
-### Duplicate Detection
-- Persistent across runs via `data/seen_ids.json`
-- Format: `{source}:{source_id}` (e.g., `reddit:SaaS:1qzd3na`)
+### Scoring Config (`scoring_config.json`)
 
-### Logging
-- Per-source logs in `logs/`
-- Console + file output
-- Includes rate limit tracking, error handling
+**Current:** v1.4-balanced
 
-### Normalization
-- All sources → consistent schema
-- HTML cleaning for Reddit
-- Truncation to 500 chars
+Key settings:
+- Source weights: GitHub=20, Reddit=8-14, HN=15
+- Pain signals: 14 points for strong frustration
+- Willingness to pay: 16 points
+- LLM threshold: 45 (triggers Claude Haiku enhancement)
 
----
+### Scoring Profiles Available
 
-## 🛠️ Next Steps
+- `scoring_config.json` — Balanced (current)
+- `scoring_config_aggressive.json` — Higher scores
+- `scoring_config_business.json` — B2B focused
+- `scoring_config_pain_boost.json` — Pain point emphasis
 
-1. **Processing pipeline:** Score/rank opportunities
-2. **Digest generator:** Daily top-N summaries
-3. **Notification:** Telegram integration for high-value finds
-4. **Analysis:** Clustering by problem domain
-5. **Validation:** Track which opportunities become real products
+Switch by updating `scripts/config.py` → `SCORING_CONFIG_PATH`
 
 ---
 
-## 📖 Documentation
+## 📈 Performance (Feb 14, 2026)
 
-- **EVALUATION.md** — Full test results and analysis
-- **scripts/config.py** — All configurable settings
-- **.env.example** — Template for environment variables
+### Collection Volume
+- Reddit: 40-60 opps/day
+- HN: 0-18 opps/day
+- GitHub: 0-5 opps/week
+- **Total: ~50-70 opps/day**
+
+### Quality Distribution
+- High (60+): 1-2% of opportunities
+- Medium (40-59): 15-20%
+- Low (<40): 78-85%
+
+### System Health
+- Collection success rate: >95%
+- Validation pass rate: 100%
+- Deduplication: ~5% duplicates removed
+- LLM triggers: 0 (threshold=45, avg score=35)
 
 ---
 
 ## 💰 Cost Breakdown
 
-| Service | API | Rate Limit | Monthly Cost |
-|---------|-----|------------|--------------|
-| Reddit RSS | None | Unlimited | **$0** |
-| GitHub API | Token | 5,000/hr | **$0** |
-| HN Algolia | None | Generous | **$0** |
-| **TOTAL** | | | **$0** |
+| Component | Service | Cost |
+|-----------|---------|------|
+| Collection | Reddit RSS, HN API, GitHub API | **$0** |
+| Processing | Local Python | **$0** |
+| LLM Scoring | OpenRouter (Claude Haiku) | **$0*** |
+| Storage | Local files (~15MB) | **$0** |
+| **TOTAL** | | **$0/month** |
+
+*LLM not yet triggered (no opportunities reach threshold)
 
 **Budget:** $15/month  
-**Headroom:** 100% available for expansion
+**Used:** $0  
+**Available:** 100%
 
 ---
 
-## 🐛 Known Issues
+## 🔍 Monitoring
 
-1. ~~GitHub 6-hour window too narrow~~ ✅ **Fixed:** Now weekly (168 hours)
-2. ~~Rate limit warning at 500~~ ✅ **Fixed:** Threshold lowered to 10
-3. ~~GitHub daily collection yields 0 results~~ ✅ **Fixed:** Changed to weekly with reactions:>2
-4. Reddit engagement data missing (RSS limitation) — Low priority
+Active monitoring since 2026-02-14 22:01 UTC.
+
+**Tracked Metrics:**
+- Job success rates
+- Collection volume
+- Score distribution
+- LLM enhancement triggers
+- Processing errors
+
+**Review Cycle:** 24 hours
+
+---
+
+## 📖 Documentation
+
+### Core Docs
+- **README.md** — This file (setup + overview)
+- **ARCHITECTURE.md** — Detailed system design
+- **SYSTEM_STATUS.md** — Current operational status
+
+### Analysis Docs
+- **PRODUCTION_TEST_RESULTS.md** — System testing results
+- **BACKTEST_COMPARISON.md** — Scoring config comparison
+- **KEYWORD_INSIGHTS.md** — Source analysis
+
+### Implementation Docs
+- **PHASE1_COMPLETE.md** — Collection layer implementation
+- **PHASE2_LLM.md** — LLM scoring integration
+- **DEPLOY.md** — Deployment guide
+
+---
+
+## 🐛 Known Issues & Limitations
+
+### Current
+- **Low scoring:** 79% of opps score <40 (config tuning needed)
+- **LLM never triggered:** Threshold=45, but avg score=35
+- **Log rotation needed:** Logs growing (minor)
+
+### Resolved
+- ✅ GitHub 6h window too narrow → Weekly
+- ✅ Rate limit warnings → Threshold adjusted
+- ✅ Daily GitHub collection → Changed to weekly
+- ✅ Cron automation → All jobs enabled
+
+---
+
+## 🚧 Roadmap
+
+### Short-term (Week 1-2)
+- [ ] Tune scoring config (test aggressive profile)
+- [ ] Lower LLM threshold to 40
+- [ ] Add log rotation
+- [ ] Weekly summary reports
+
+### Medium-term (Month 1-2)
+- [ ] Semantic deduplication (embeddings)
+- [ ] Trend detection across time
+- [ ] Product Hunt integration
+- [ ] Competitor tracking
+
+### Long-term (Month 3+)
+- [ ] ML-based scoring
+- [ ] Outcome tracking (which opps became products?)
+- [ ] Multi-user support
+- [ ] Web dashboard
 
 ---
 
 ## 🤝 Contributing
 
 To customize for your niche:
-1. Edit subreddits in `config.py`
-2. Add niche GitHub repos
-3. Expand keyword lists
-4. Adjust time windows in `.env`
+
+1. **Add sources:** Edit `scripts/config.py`
+   - `REDDIT_SUBREDDITS` — Add relevant subreddits
+   - `GITHUB_REPOSITORIES` — Add relevant repos
+   - `REDDIT_PAIN_KEYWORDS` — Add niche keywords
+
+2. **Tune scoring:** Edit `scoring_config.json`
+   - Adjust source weights
+   - Add pain point phrases
+   - Modify thresholds
+
+3. **Adjust collection:** Edit `.env`
+   - `COLLECTION_HOURS_BACK` — Reddit/HN lookback
+   - `GITHUB_HOURS_BACK` — GitHub lookback
 
 ---
 
-**Built with OpenClaw 🦞**
+## 📄 License
+
+MIT License - See LICENSE file
+
+---
+
+## 🙏 Credits
+
+**Built with:**
+- OpenClaw (autonomous agent framework)
+- Python (collection + processing)
+- Claude (LLM scoring)
+
+**Data Sources:**
+- Reddit (RSS feeds)
+- GitHub (Search API)
+- Hacker News (Algolia API)
+
+---
+
+**Status:** 🟢 Production | **Monitoring:** Active | **Cost:** $0/month
+
+Built with OpenClaw 🦞
