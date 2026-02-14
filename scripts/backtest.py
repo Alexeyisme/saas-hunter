@@ -153,7 +153,7 @@ def main():
     # Score with current config
     print("Scoring opportunities...")
     for opp in raw_opps:
-        opp['score'] = score_opportunity(opp)
+        opp['score'] = score_opportunity(opp, config=config)
     
     # Deduplicate
     print("Deduplicating...")

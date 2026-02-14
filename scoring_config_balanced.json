@@ -1,0 +1,94 @@
+{
+  "version": "1.4-balanced",
+  "description": "Balanced scoring - not too conservative, not too aggressive",
+  
+  "source_weights": {
+    "github": 20,
+    "hackernews": 15,
+    "reddit:smallbusiness": 14,
+    "reddit:sysadmin": 13,
+    "reddit:startups": 14,
+    "reddit:freelance": 14,
+    "reddit:sales": 12,
+    "reddit:marketing": 11,
+    "reddit:webdev": 10,
+    "reddit:saas": 9,
+    "reddit:entrepreneur": 11,
+    "reddit:default": 8
+  },
+  
+  "engagement_weights": {
+    "github_reaction_multiplier": 2,
+    "github_reaction_max": 16,
+    "comments_max": 12,
+    "hackernews_score_max": 12
+  },
+  
+  "pain_point_signals": {
+    "strong_pain": {
+      "phrases": ["sick of", "frustrated with", "frustrated by", "hate", "tired of", "annoyed by", "fed up with", "can't stand", "driving me crazy", "nightmare", "terrible", "awful", "ridiculous", "absurd"],
+      "score": 14
+    },
+    "willingness_to_pay": {
+      "phrases": ["would pay", "expensive", "pricing", "cost", "price", "too much", "overpriced", "charging", "$", "subscription", "per month", "/month", "killing me", "budget", "worth it", "gladly pay", "happily pay"],
+      "score": 16
+    },
+    "seeking_alternatives": {
+      "phrases": ["alternative to", "better than", "instead of", "replace", "switch from", "switching to", "moving away from", "ditching", "competitor to"],
+      "score": 11
+    },
+    "time_waste": {
+      "phrases": ["wasting time", "takes forever", "too slow", "manual", "repetitive", "hours spent", "time consuming", "inefficient", "tedious"],
+      "score": 11
+    }
+  },
+  
+  "specificity_scoring": {
+    "long_body_threshold": 250,
+    "long_body_score": 12,
+    "medium_body_threshold": 120,
+    "medium_body_score": 6,
+    "contains_numbers_score": 7
+  },
+  
+  "competition_signals": {
+    "mentions_competitor": {
+      "phrases": ["vs", "compared to", "like", "similar to", "docusign", "hubspot", "salesforce", "slack", "notion", "zapier"],
+      "score": 7
+    },
+    "gaps_mentioned": {
+      "phrases": ["missing", "doesn't have", "lacks", "limited", "no support for", "can't do", "doesn't support", "why can't", "wish it had"],
+      "score": 11
+    }
+  },
+  
+  "market_signals": {
+    "business_context": {
+      "phrases": ["business", "company", "team", "clients", "customers", "agency", "startup", "enterprise", "organization", "department"],
+      "score": 10
+    },
+    "scale_indicators": {
+      "phrases": ["users", "subscribers", "revenue", "growth", "scaling", "volume", "thousands of", "per month", "monthly"],
+      "score": 9
+    },
+    "roi_mentions": {
+      "phrases": ["roi", "return", "save money", "save time", "productivity", "efficiency", "bottom line", "losing money", "costing us"],
+      "score": 11
+    }
+  },
+  
+  "llm_config": {
+    "enabled": true,
+    "threshold": 45,
+    "weight": 0.4,
+    "base_weight": 0.6,
+    "model": "anthropic/claude-3-haiku"
+  },
+  
+  "thresholds": {
+    "minimum_score": 40,
+    "high_quality": 60,
+    "top_tier": 80,
+    "digest_top_n": 10
+  }
+}

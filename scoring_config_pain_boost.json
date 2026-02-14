@@ -1,0 +1,90 @@
+{
+  "version": "1.1-pain-boost",
+  "description": "Boost pain signals and add more keywords",
+  
+  "source_weights": {
+    "github": 20,
+    "hackernews": 15,
+    "reddit:smallbusiness": 12,
+    "reddit:sysadmin": 12,
+    "reddit:startups": 12,
+    "reddit:freelance": 12,
+    "reddit:sales": 10,
+    "reddit:marketing": 10,
+    "reddit:webdev": 10,
+    "reddit:saas": 8,
+    "reddit:entrepreneur": 8,
+    "reddit:default": 8
+  },
+  
+  "engagement_weights": {
+    "github_reaction_multiplier": 2,
+    "github_reaction_max": 15,
+    "comments_max": 10,
+    "hackernews_score_max": 10
+  },
+  
+  "pain_point_signals": {
+    "strong_pain": {
+      "phrases": ["sick of", "frustrated", "hate", "tired of", "annoyed by", "fed up", "can't stand", "driving me crazy", "nightmare", "terrible", "awful", "sucks", "ridiculous"],
+      "score": 15
+    },
+    "willingness_to_pay": {
+      "phrases": ["would pay", "expensive", "pricing", "cost", "price", "too much", "overpriced", "charging", "$", "subscription", "per month", "killing me"],
+      "score": 12
+    },
+    "seeking_alternatives": {
+      "phrases": ["alternative to", "better than", "instead of", "replace", "switch from", "switching to", "moving away from", "ditching"],
+      "score": 10
+    },
+    "time_waste": {
+      "phrases": ["wasting time", "takes forever", "too slow", "manual", "repetitive", "hours spent", "time consuming"],
+      "score": 10
+    }
+  },
+  
+  "specificity_scoring": {
+    "long_body_threshold": 300,
+    "long_body_score": 10,
+    "medium_body_threshold": 150,
+    "medium_body_score": 5,
+    "contains_numbers_score": 5
+  },
+  
+  "competition_signals": {
+    "mentions_competitor": {
+      "phrases": ["vs", "compared to", "like", "similar to"],
+      "score": 5
+    },
+    "gaps_mentioned": {
+      "phrases": ["missing", "doesn't have", "lacks", "limited", "no support for", "can't do", "doesn't support", "why can't"],
+      "score": 10
+    }
+  },
+  
+  "market_signals": {
+    "business_context": {
+      "phrases": ["business", "company", "team", "clients", "customers", "agency", "startup", "enterprise"],
+      "score": 6
+    },
+    "scale_indicators": {
+      "phrases": ["users", "subscribers", "revenue", "growth", "scaling", "volume", "thousands of"],
+      "score": 6
+    }
+  },
+  
+  "llm_config": {
+    "enabled": true,
+    "threshold": 45,
+    "weight": 0.4,
+    "base_weight": 0.6,
+    "model": "anthropic/claude-3-haiku"
+  },
+  
+  "thresholds": {
+    "minimum_score": 40,
+    "high_quality": 60,
+    "top_tier": 80,
+    "digest_top_n": 10
+  }
+}
