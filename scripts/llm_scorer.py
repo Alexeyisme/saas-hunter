@@ -7,7 +7,13 @@ import os
 import json
 import requests
 from pathlib import Path
+from dotenv import load_dotenv
 from usage_tracker import UsageTracker
+
+# Load .env
+ENV_FILE = Path(__file__).parent.parent / '.env'
+if ENV_FILE.exists():
+    load_dotenv(ENV_FILE)
 
 # Config
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
@@ -22,19 +28,17 @@ SCORING_PROMPT = """Analyze this SaaS opportunity and score it 0-100 based on:
 3. Competition gap (0-20): Is this underserved?
 4. Execution feasibility (0-20): Can a solo dev build this?
 
-Return ONLY a JSON object:
-{
-  "score": <0-100>,
-  "reasoning": "<brief 1-2 sentence explanation>",
-  "pain_point": "<concise pain point description>",
-  "opportunity": "<what to build>"
-}
+Return ONLY a JSON object with these fields:
+- score (number 0-100)
+- reasoning (brief 1-2 sentence explanation)
+- pain_point (concise pain point description)
+- opportunity (what to build)
 
 Opportunity:
-Title: {title}
-Source: {source}
-Body: {body}
-Engagement: {engagement}
+Title: {{title}}
+Source: {{source}}
+Body: {{body}}
+Engagement: {{engagement}}
 """
 
 def llm_score(opportunity):
@@ -46,13 +50,11 @@ def llm_score(opportunity):
     if not OPENROUTER_API_KEY or OPENROUTER_API_KEY in ['your_openrouter_key_here', '']:
         raise ValueError("OPENROUTER_API_KEY not configured")
     
-    # Format prompt
-    prompt = SCORING_PROMPT.format(
-        title=opportunity.get('title', ''),
-        source=opportunity.get('source', ''),
-        body=opportunity.get('body', '')[:1000],  # Truncate to save tokens
-        engagement=json.dumps(opportunity.get('engagement_data', {}))
-    )
+    # Format prompt (using replace to avoid .format() issues with JSON)
+    prompt = SCORING_PROMPT.replace('{{title}}', opportunity.get('title', ''))
+    prompt = prompt.replace('{{source}}', opportunity.get('source', ''))
+    prompt = prompt.replace('{{body}}', opportunity.get('body', '')[:1000])
+    prompt = prompt.replace('{{engagement}}', json.dumps(opportunity.get('engagement_data', {})))
     
     # Call API
     headers = {
@@ -76,13 +78,8 @@ def llm_score(opportunity):
     content = result['choices'][0]['message']['content']
     usage = result.get('usage', {})
     
-    # Track usage
-    tracker.log_tokens(
-        'llm_scorer',
-        input_tokens=usage.get('prompt_tokens', 0),
-        output_tokens=usage.get('completion_tokens', 0),
-        model=MODEL
-    )
+    # Note: Usage tracking would go here but UsageTracker doesn't support token tracking yet
+    # TODO: Add token tracking to usage_tracker.py
     
     # Parse response
     try:
