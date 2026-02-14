@@ -14,10 +14,12 @@ from utils import setup_logging
 # Use config-driven scoring
 try:
     from scoring import score_opportunity
+    from validate import validate_opportunities
     SCORING_IMPORTED = True
 except ImportError:
     SCORING_IMPORTED = False
     # Fallback will be defined below
+    validate_opportunities = None
 
 # Check if LLM scoring is enabled
 LLM_ENABLED = bool(os.getenv('OPENROUTER_API_KEY'))
@@ -164,7 +166,7 @@ def deduplicate_opportunities(opps):
         is_duplicate = False
         for seen in seen_titles:
             similarity = fuzz.ratio(title, seen)
-            if similarity > 85:  # 85% similar = duplicate
+            if similarity > 75:  # 75% similar = duplicate (lowered from 85)
                 is_duplicate = True
                 break
         
@@ -253,6 +255,16 @@ def main():
         
         logger.info(f"Total opportunities loaded: {len(all_opps)}")
         
+        # 2.5. Validate data
+        if validate_opportunities:
+            valid_opps, errors = validate_opportunities(all_opps)
+            if errors:
+                logger.warning(f"Validation errors: {len(errors)} invalid opportunities")
+                for err in errors[:5]:  # Log first 5 errors
+                    logger.warning(f"  {err['error']}: {err['title']}")
+            all_opps = valid_opps
+            logger.info(f"After validation: {len(all_opps)} valid opportunities")
+        
         # 3. Score each
         llm_enhanced_count = 0
         for opp in all_opps:
@@ -318,6 +330,6 @@ if __name__ == '__main__':
         main()
         sys.exit(0)
     except Exception as e:
-        logger.error(f"Processing failed: {e}")
-        print(f"ERROR: {e}", file=sys.stderr)
+        logger.error(f"CRITICAL: Processing failed: {e}", exc_info=True)
+        print(f"ALERT: Processing failed: {e}", file=sys.stderr)
         sys.exit(1)

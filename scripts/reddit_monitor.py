@@ -177,5 +177,10 @@ if __name__ == '__main__':
         main()
         sys.exit(0)
     except Exception as e:
+        logger.error(f"CRITICAL ERROR in reddit_monitor: {e}")
+        logger.error(f"Traceback:", exc_info=True)
         print(f"ERROR: {e}", file=sys.stderr)
+        
+        # Alert via stderr (cron will capture)
+        print(f"ALERT: Reddit monitor failed: {e}", file=sys.stderr)
         sys.exit(1)

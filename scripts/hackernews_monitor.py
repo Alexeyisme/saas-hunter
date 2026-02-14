@@ -172,5 +172,6 @@ if __name__ == '__main__':
         main()
         sys.exit(0)
     except Exception as e:
-        print(f"ERROR: {e}", file=sys.stderr)
+        logger.error(f"CRITICAL: HackerNews monitor failed: {e}", exc_info=True)
+        print(f"ALERT: HackerNews monitor failed: {e}", file=sys.stderr)
         sys.exit(1)

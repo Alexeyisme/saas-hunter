@@ -211,5 +211,6 @@ if __name__ == '__main__':
         main()
         sys.exit(0)
     except Exception as e:
-        logger.error(f"ERROR: {e}")
+        logger.error(f"CRITICAL: GitHub monitor failed: {e}", exc_info=True)
+        print(f"ALERT: GitHub monitor failed: {e}", file=sys.stderr)
         sys.exit(1)
