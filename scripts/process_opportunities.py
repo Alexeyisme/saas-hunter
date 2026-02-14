@@ -11,6 +11,10 @@ from fuzzywuzzy import fuzz
 from usage_tracker import UsageTracker
 from utils import setup_logging
 
+# Setup logging first (needed for LLM check below)
+LOG_DIR = Path(__file__).parent.parent / 'logs'
+logger = setup_logging(__name__, LOG_DIR / 'processing.log')
+
 # Use config-driven scoring
 try:
     from scoring import score_opportunity
@@ -18,24 +22,22 @@ try:
     SCORING_IMPORTED = True
 except ImportError:
     SCORING_IMPORTED = False
-    # Fallback will be defined below
+    logger.error("Failed to import scoring.py - using fallback")
     validate_opportunities = None
 
-# Check if LLM scoring is enabled
-LLM_ENABLED = bool(os.getenv('OPENROUTER_API_KEY'))
+# Check if LLM scoring is enabled (skip placeholder keys)
+api_key = os.getenv('OPENROUTER_API_KEY', '')
+LLM_ENABLED = api_key and api_key not in ['your_openrouter_key_here', '', 'your_api_key_here']
+
 if LLM_ENABLED:
     try:
         from llm_scorer import enhanced_score
-        print("✓ LLM scoring enabled")
+        logger.info("LLM scoring enabled with OpenRouter")
     except ImportError:
-        print("⚠ LLM scorer not found, falling back to rule-based")
+        logger.warning("LLM scorer module not found, falling back to rule-based")
         LLM_ENABLED = False
 else:
-    print("✓ Rule-based scoring only (set OPENROUTER_API_KEY to enable LLM)")
-
-# Setup logging
-LOG_DIR = Path(__file__).parent.parent / 'logs'
-logger = setup_logging(__name__, LOG_DIR / 'processing.log')
+    logger.info("Rule-based scoring only (LLM disabled)")
 
 # Paths
 DATA_DIR = Path(__file__).parent.parent / 'data'
@@ -279,7 +281,8 @@ def main():
                         opp['llm_analysis'] = llm_data
                         llm_enhanced_count += 1
                 except Exception as e:
-                    logger.warning(f"LLM scoring failed for {opp.get('id')}: {e}")
+                    # LLM failed, use base score
+                    logger.debug(f"LLM enhancement skipped for opportunity (using base score): {str(e)[:100]}")
                     opp['score'] = base_score
             else:
                 opp['score'] = base_score

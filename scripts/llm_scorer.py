@@ -43,8 +43,8 @@ def llm_score(opportunity):
     Returns dict with score, reasoning, pain_point, opportunity
     Cost: ~$0.001 per call
     """
-    if not OPENROUTER_API_KEY:
-        raise ValueError("OPENROUTER_API_KEY not set in environment")
+    if not OPENROUTER_API_KEY or OPENROUTER_API_KEY in ['your_openrouter_key_here', '']:
+        raise ValueError("OPENROUTER_API_KEY not configured")
     
     # Format prompt
     prompt = SCORING_PROMPT.format(
