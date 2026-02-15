@@ -152,3 +152,6 @@ BODY_PREVIEW_LENGTH = 500  # characters
 # Digest Settings
 DIGEST_TOP_N = int(os.getenv('DIGEST_TOP_N', '5'))
 DIGEST_DAYS_BACK = int(os.getenv('DIGEST_DAYS_BACK', '1'))
+
+# Budget Settings
+MONTHLY_BUDGET_USD = float(os.getenv('MONTHLY_BUDGET_USD', '15.0'))
