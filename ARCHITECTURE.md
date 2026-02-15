@@ -1,152 +1,212 @@
-# SaaS Hunter - Complete Architecture
+# SaaS Hunter - System Architecture
 
-**Design Goal:** Transform raw opportunities into actionable, prioritized insights ready for decision-making.
+**Version:** 1.0  
+**Last Updated:** 2026-02-15
 
 ---
 
 ## Overview
 
+SaaS Hunter is a 4-layer pipeline system that transforms raw social media data into actionable SaaS opportunities.
+
+**Design Goals:**
+- **Signal over noise** — only surface high-quality, validated pain points
+- **Cost-efficient** — free APIs, minimal compute
+- **Transparent scoring** — every score is explainable
+- **Modular** — each layer can run independently
+
+---
+
+## System Diagram
+
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ COLLECTION LAYER (Cron Jobs)                                   │
-│  Reddit (3h) → raw/reddit_YYYYMMDD_HHMMSS.json                 │
-│  HN (4h)     → raw/hackernews_YYYYMMDD_HHMMSS.json            │
-│  GitHub (7d) → raw/github_YYYYMMDD_HHMMSS.json                │
+│ LAYER 1: COLLECTION (Cron-triggered)                           │
+│                                                                 │
+│  Reddit Monitor (every 3h)                                     │
+│    └─→ raw/reddit_YYYYMMDD_HHMMSS.json                        │
+│                                                                 │
+│  HackerNews Monitor (every 4h)                                 │
+│    └─→ raw/hackernews_YYYYMMDD_HHMMSS.json                    │
+│                                                                 │
+│  GitHub Monitor (daily 6 AM)                                   │
+│    └─→ raw/github_YYYYMMDD_HHMMSS.json                        │
+│                                                                 │
+│  Deduplication: seen_ids.json                                  │
 └──────────────────────┬──────────────────────────────────────────┘
                        │
                        ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ PROCESSING LAYER (Triggered after collection)                  │
-│  1. Load new raw files                                         │
-│  2. Score each opportunity (0-100)                             │
-│  3. Deduplicate across sources                                 │
-│  4. Enrich with metadata                                       │
-│  5. Save to processed/opportunities_YYYYMMDD.jsonl             │
+│ LAYER 2: PROCESSING (Every 6h)                                 │
+│                                                                 │
+│  process_opportunities.py                                       │
+│    1. Load new raw files since last run                        │
+│    2. Score each opportunity (0-100)                            │
+│       - Source credibility (20 pts)                             │
+│       - Engagement metrics (25 pts)                             │
+│       - Pain point clarity (20 pts)                             │
+│       - Specificity (15 pts)                                    │
+│       - Freshness (10 pts)                                      │
+│       - Niche fit (10 pts)                                      │
+│    3. Deduplicate across sources (fuzzy matching)              │
+│    4. Enrich with metadata (domain, competitors)               │
+│    5. Filter (min score 40)                                     │
+│                                                                 │
+│  Output: processed/opportunities_YYYYMMDD.jsonl                │
+│          (one opportunity per line)                             │
 └──────────────────────┬──────────────────────────────────────────┘
                        │
                        ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ AGGREGATION LAYER (Daily digest)                               │
-│  1. Load last 24h processed opportunities                      │
-│  2. Group by problem domain                                    │
-│  3. Rank by score + freshness                                  │
-│  4. Generate daily digest (top 5-10)                           │
-│  5. Save to digests/digest_YYYYMMDD.md                         │
+│ LAYER 3: AGGREGATION (Daily 8 AM UTC)                          │
+│                                                                 │
+│  generate_digest.py                                             │
+│    1. Load last 24h of processed opportunities                 │
+│    2. Rank by score (descending)                                │
+│    3. Group by problem domain                                   │
+│    4. Format as markdown                                        │
+│       - Top tier (60+): Full analysis                           │
+│       - Worth exploring (40-59): Brief summary                  │
+│       - Trends: Keyword patterns, domain distribution           │
+│                                                                 │
+│  Output: digests/digest_YYYYMMDD.md                            │
+│          telegram_outbox/digest_latest.txt (symlink)            │
 └──────────────────────┬──────────────────────────────────────────┘
                        │
                        ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ DELIVERY LAYER                                                  │
-│  • Telegram message (top 3 daily)                              │
-│  • Web dashboard (optional)                                     │
-│  • JSONL export for analysis                                   │
+│ LAYER 4: DELIVERY                                               │
+│                                                                 │
+│  send_telegram_openclaw.py (triggered after digest)            │
+│    - Reads telegram_outbox/digest_latest.txt                   │
+│    - Sends via OpenClaw message tool                           │
+│    - Renames to .sent to prevent re-sending                    │
+│                                                                 │
+│  Alternative: OpenClaw heartbeat polling (every ~30 min)       │
+│    - Checks for new digest_latest.txt                          │
+│    - Auto-sends when detected                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 1. Collection Layer (Current)
+## Layer 1: Collection
 
-### Files Structure
+### Purpose
+Continuously gather raw opportunities from multiple sources.
+
+### Components
+
+#### Reddit Monitor
+- **Script:** `reddit_monitor.py`
+- **Frequency:** Every 3 hours (8x/day)
+- **Subreddits:** r/SaaS, r/startups, r/Entrepreneur, r/smallbusiness, r/sales
+- **Filter:** Posts from last 24h, min 3 upvotes
+- **API:** PRAW (Reddit API wrapper)
+- **Output:** `data/raw/reddit_YYYYMMDD_HHMMSS.json`
+
+**Example Output:**
+```json
+{
+  "source": "reddit",
+  "subreddit": "SaaS",
+  "collected_at": "2026-02-15T06:05:23Z",
+  "count": 12,
+  "opportunities": [
+    {
+      "id": "1r4xh7c",
+      "title": "6 years in sales, moving to SF...",
+      "url": "https://reddit.com/r/sales/...",
+      "author": "username",
+      "upvotes": 15,
+      "num_comments": 8,
+      "body": "Full post text...",
+      "created_utc": "2026-02-15T04:23:10Z"
+    }
+  ]
+}
 ```
-~/saas-hunter/
-├── data/
-│   ├── raw/                    # Raw collector output
-│   │   ├── reddit_20260208_120000.json
-│   │   ├── github_20260208_060000.json
-│   │   └── hackernews_20260208_140000.json
-│   ├── processed/              # Scored + enriched
-│   │   └── opportunities_20260208.jsonl
-│   ├── digests/                # Daily summaries
-│   │   └── digest_20260208.md
-│   └── seen_ids.json           # Deduplication
-```
 
-### Cron Schedule
-```cron
-# Reddit: Every 3 hours (8 collections/day)
-0 */3 * * * cd ~/saas-hunter/scripts && ../venv/bin/python3 reddit_monitor.py
+#### HackerNews Monitor
+- **Script:** `hackernews_monitor.py`
+- **Frequency:** Every 4 hours (6x/day)
+- **Sources:** Show HN, Ask HN, trending stories
+- **Filter:** Min 5 points, posted in last 48h
+- **API:** HN RSS feed + Algolia API
+- **Output:** `data/raw/hackernews_YYYYMMDD_HHMMSS.json`
 
-# HN: Every 4 hours (6 collections/day)
-0 */4 * * * cd ~/saas-hunter/scripts && ../venv/bin/python3 hackernews_monitor.py
+#### GitHub Monitor
+- **Script:** `github_monitor.py`
+- **Frequency:** Daily at 6 AM UTC
+- **Targets:** 
+  - Trending repos (topics: saas, productivity, developer-tools)
+  - Issues with 5+ reactions
+- **API:** PyGithub (GitHub API v3)
+- **Output:** `data/raw/github_YYYYMMDD_HHMMSS.json`
 
-# GitHub: Weekly (Sundays at 6 AM)
-0 6 * * 0 cd ~/saas-hunter/scripts && ../venv/bin/python3 github_monitor.py
-
-# Process: Every 6 hours (or after each GitHub run)
-30 */6 * * * cd ~/saas-hunter/scripts && ../venv/bin/python3 process_opportunities.py
-
-# Digest: Daily at 8 AM
-0 8 * * * cd ~/saas-hunter/scripts && ../venv/bin/python3 generate_digest.py
-```
+### Deduplication
+- **File:** `data/seen_ids.json`
+- **Strategy:** Track unique IDs (reddit post ID, HN item ID, GitHub issue number)
+- **Purpose:** Avoid re-collecting same item across runs
 
 ---
 
-## 2. Processing Layer (New)
+## Layer 2: Processing
 
-### Script: `process_opportunities.py`
+### Purpose
+Score, deduplicate, and enrich raw opportunities.
 
-**Purpose:** Score, deduplicate, and enrich raw opportunities
+### Script
+`process_opportunities.py`
 
-**Input:** All raw JSON files since last run  
-**Output:** `processed/opportunities_YYYYMMDD.jsonl` (one line per opportunity)
+### Execution
+Every 6 hours (at :25 past the hour, staggered after collections)
 
-### Scoring Algorithm (0-100 points)
+### Pipeline
 
+#### 1. Load New Files
 ```python
-def score_opportunity(opp):
+last_run = load_last_run_time()  # from state file
+raw_files = find_files_since(last_run, 'data/raw/')
+all_opportunities = []
+for file in raw_files:
+    opps = json.load(file)['opportunities']
+    all_opportunities.extend(opps)
+```
+
+#### 2. Score Each Opportunity
+```python
+for opp in all_opportunities:
     score = 0
     
-    # 1. Source credibility (max 20 points)
-    if opp['source'].startswith('github:'):
-        score += 20  # Validated by reactions
-    elif opp['source'] == 'hackernews':
-        score += 15  # Tech-savvy audience
-    elif opp['source'].startswith('reddit:'):
-        score += 10  # Varies by subreddit
-    
-    # 2. Engagement (max 25 points)
-    engagement = opp.get('engagement_data', {})
-    
-    # GitHub reactions
-    reactions = engagement.get('reactions', 0)
-    score += min(reactions * 2, 15)
-    
-    # Comments (any source)
-    comments = engagement.get('comments', 0)
-    score += min(comments, 10)
-    
-    # HN score
-    hn_score = engagement.get('score', 0)
-    score += min(hn_score, 10)
-    
-    # 3. Pain point clarity (max 20 points)
-    text = (opp['title'] + ' ' + opp['body']).lower()
-    
-    # Strong pain indicators
-    if any(p in text for p in ['sick of', 'frustrated', 'hate']):
+    # Source credibility (20 pts)
+    if source == 'github':
+        score += 20
+    elif source == 'hackernews':
+        score += 15
+    elif source.startswith('reddit:'):
         score += 10
     
-    # Willingness to pay signals
-    if any(p in text for p in ['would pay', 'expensive', 'pricing']):
+    # Engagement (25 pts max)
+    score += min(reactions * 2, 15)      # GitHub reactions
+    score += min(comments, 10)            # Any source
+    score += min(hn_score, 10)            # HN points
+    
+    # Pain point clarity (20 pts)
+    text = (title + body).lower()
+    if 'sick of' in text or 'frustrated' in text:
+        score += 10
+    if 'would pay' in text or 'expensive' in text:
         score += 10
     
-    # 4. Specificity (max 15 points)
-    # Longer, detailed posts = more specific problem
-    if len(opp['body']) > 300:
+    # Specificity (15 pts)
+    if len(body) > 300:
         score += 10
-    elif len(opp['body']) > 150:
+    if has_numbers(body):
         score += 5
     
-    # Contains numbers/metrics
-    if any(char.isdigit() for char in opp['body']):
-        score += 5
-    
-    # 5. Freshness (max 10 points)
-    from datetime import datetime, timedelta
-    pub_date = datetime.fromisoformat(opp['published_utc'].replace('Z', '+00:00'))
-    age_hours = (datetime.now() - pub_date).total_seconds() / 3600
-    
+    # Freshness (10 pts)
+    age_hours = hours_since(published_utc)
     if age_hours < 6:
         score += 10
     elif age_hours < 24:
@@ -154,377 +214,413 @@ def score_opportunity(opp):
     elif age_hours < 72:
         score += 4
     
-    # 6. Niche fit (max 10 points)
-    # B2B, SaaS, developer tools
-    if any(kw in text for kw in ['b2b', 'saas', 'api', 'dev tool']):
+    # Niche fit (10 pts)
+    if any(kw in text for kw in ['b2b', 'saas', 'api']):
         score += 10
     
-    return min(score, 100)
+    opp['score'] = min(score, 100)
 ```
 
-### Deduplication Strategy
-
-**Problem:** Same opportunity appears across sources
-- Reddit post → HN discussion → GitHub issue
-
-**Solution:** Fuzzy matching + domain clustering
-
+#### 3. Deduplicate
 ```python
-def deduplicate_opportunities(opps):
-    clusters = []
+def deduplicate(opportunities):
+    """Remove duplicates across sources"""
+    unique = []
+    seen_titles = set()
     
-    for opp in opps:
-        # Extract core concept
-        core = extract_keywords(opp['title'])
+    for opp in sorted(opportunities, key=lambda x: -x['score']):
+        title_core = extract_keywords(opp['title'])
         
-        # Find matching cluster
-        match = find_similar_cluster(core, clusters)
-        
-        if match:
-            # Keep highest-scored version
-            if opp['score'] > match['score']:
-                clusters[idx] = opp
-        else:
-            clusters.append(opp)
+        if not fuzzy_match(title_core, seen_titles, threshold=0.85):
+            unique.append(opp)
+            seen_titles.add(title_core)
     
-    return clusters
+    return unique
 ```
 
-### Enrichment
-
-Add computed fields:
+#### 4. Enrich
 ```python
-{
-    "opportunity_id": "2026-02-08-reddit-saas-001",
-    "score": 78,
-    "age_hours": 12,
-    "domain": "project-management",  # clustering
-    "competitors": ["Asana", "Linear"],  # extracted
-    "processed_at": "2026-02-08T18:00:00Z"
-}
+for opp in opportunities:
+    opp['opportunity_id'] = generate_id(opp)
+    opp['domain'] = classify_domain(opp)  # e.g., "design", "productivity"
+    opp['competitors'] = extract_competitors(opp['body'])
+    opp['processed_at'] = datetime.now().isoformat()
+```
+
+#### 5. Filter & Save
+```python
+MIN_SCORE = 40
+filtered = [o for o in opportunities if o['score'] >= MIN_SCORE]
+
+with open(f'data/processed/opportunities_{today}.jsonl', 'a') as f:
+    for opp in filtered:
+        f.write(json.dumps(opp) + '\n')
+```
+
+### Output Format (JSONL)
+```json
+{"opportunity_id":"2026-02-15-reddit-saas-001","source":"reddit:SaaS","title":"Alternative to Supademo","score":92,"domain":"design","competitors":["Supademo","Arcade"],"processed_at":"2026-02-15T06:25:00Z"}
+{"opportunity_id":"2026-02-15-reddit-nocode-002","source":"reddit:nocode","title":"Better workflow automation","score":85,"domain":"productivity","competitors":["Zapier","Make"],"processed_at":"2026-02-15T06:25:00Z"}
 ```
 
 ---
 
-## 3. Aggregation Layer (New)
+## Layer 3: Aggregation
 
-### Script: `generate_digest.py`
+### Purpose
+Create human-readable daily summary.
 
-**Purpose:** Create human-readable daily summary
+### Script
+`generate_digest.py`
 
-**Input:** Last 24h of processed opportunities  
-**Output:** `digests/digest_YYYYMMDD.md`
+### Execution
+Daily at 8:00 AM UTC
 
-### Digest Format
+### Process
 
-```markdown
-# SaaS Opportunities — Feb 8, 2026
+#### 1. Load Last 24h
+```python
+today = datetime.now().date()
+yesterday = today - timedelta(days=1)
 
-**Summary:** 24 opportunities collected, 12 processed, 5 top-tier
-
----
-
-## 🔥 Top Opportunities (Score 80+)
-
-### 1. Alternative to Supademo for Product Demos (Score: 92)
-**Source:** Reddit r/SaaS  
-**Pain Point:** "Sick of paying $40/month for Supademo just to make ONE demo"  
-**Signal:** 15 upvotes, multiple comments validating pain  
-**Market:** One-time payment for demo creation  
-**Competition:** Supademo ($40/mo), Arcade ($50/mo)  
-**Link:** https://reddit.com/r/SaaS/...
-
-**Why High Score:**
-- Clear frustration with pricing model
-- Specific competitor mentioned
-- Willing to pay signal
-- Active discussion
-
----
-
-### 2. Workflow Automation for Non-Developers (Score: 85)
-**Source:** Reddit r/nocode  
-**Pain Point:** "Need something better than Zapier for complex workflows"  
-**Signal:** 8 comments, users sharing workarounds  
-**Market:** Visual workflow builder with conditionals  
-**Competition:** Zapier, Make, n8n (too technical)  
-**Link:** https://reddit.com/r/nocode/...
-
----
-
-## 💡 Worth Exploring (Score 60-79)
-
-- **Email Management AI** (Score: 72) — "Tired of 20+ daily emails"
-- **Spreadsheet UX for B2B** (Score: 68) — Better than Excel for wholesale
-- **Canadian Tax Calculator** (Score: 65) — HN developer asking for data source
-
----
-
-## 📊 Trends (Last 7 Days)
-
-- **Subscription fatigue:** 5 mentions (pricing pain point)
-- **AI integration:** 8 mentions (automation opportunity)
-- **Spreadsheet alternatives:** 4 mentions (B2B workflow)
-
----
-
-**Collected:** 24 total | **Processed:** 12 after dedup | **Top Tier:** 5
-
-Generated: 2026-02-08 08:00 UTC
+opportunities = []
+for date in [yesterday, today]:
+    file = f'data/processed/opportunities_{date.strftime("%Y%m%d")}.jsonl'
+    if exists(file):
+        with open(file) as f:
+            opportunities.extend([json.loads(line) for line in f])
 ```
 
+#### 2. Rank & Group
+```python
+# Sort by score
+opportunities.sort(key=lambda x: -x['score'])
+
+# Group by domain
+by_domain = defaultdict(list)
+for opp in opportunities:
+    by_domain[opp['domain']].append(opp)
+
+# Tier by score
+top_tier = [o for o in opportunities if o['score'] >= 60]
+worth_exploring = [o for o in opportunities if 40 <= o['score'] < 60]
+```
+
+#### 3. Generate Markdown
+```python
+digest = f"# SaaS Opportunities — {today.strftime('%B %d, %Y')}\n\n"
+digest += f"**Summary:** {len(opportunities)} opportunities collected\n\n"
+digest += "---\n\n"
+
+# Top tier
+digest += "## ⭐ High Potential (Score 60-79)\n\n"
+for opp in top_tier[:10]:
+    digest += f"### {i}. {opp['title']} (Score: {opp['score']})\n"
+    digest += f"**Source:** {opp['source']}\n"
+    digest += f"**Link:** {opp['url']}\n\n"
+
+# Worth exploring
+digest += "## 💡 Worth Exploring (Score 40-59)\n\n"
+for opp in worth_exploring:
+    digest += f"- **{opp['title']}** ({opp['score']} pts) — {opp['source']}\n"
+
+# Trends
+digest += "\n## 📊 Trends\n\n"
+digest += f"**By Domain:**\n"
+for domain, opps in by_domain.items():
+    digest += f"- {domain}: {len(opps)} opportunities\n"
+```
+
+#### 4. Save & Symlink
+```python
+digest_file = f'data/digests/digest_{today.strftime("%Y%m%d")}.md'
+with open(digest_file, 'w') as f:
+    f.write(digest)
+
+# Create symlink for Telegram delivery
+outbox = 'data/telegram_outbox/digest_latest.txt'
+if exists(outbox):
+    os.remove(outbox)
+os.symlink(digest_file, outbox)
+```
+
+### Output Example
+See [Example Digest](data/digests/digest_20260215.md)
+
 ---
 
-## 4. Delivery Layer
+## Layer 4: Delivery
 
-### Option A: Telegram Bot (Recommended)
+### Purpose
+Push daily digest to user's phone.
 
-**Daily message at 8 AM:**
+### Method 1: Direct Send (Post-Digest)
+```bash
+# In crontab, chained with digest generation
+0 8 * * * ... generate_digest.py && send_telegram_openclaw.py
 ```
-🎯 SaaS Opportunities — Feb 8
 
-Top 3 Today:
+`send_telegram_openclaw.py`:
+```python
+def send_digest():
+    latest = 'data/telegram_outbox/digest_latest.txt'
+    
+    if not exists(latest):
+        print("No digest to send")
+        return
+    
+    with open(latest) as f:
+        text = f.read()
+    
+    # Send via OpenClaw message tool
+    subprocess.run([
+        'openclaw', 'message', 'send',
+        '--channel', 'telegram',
+        '--to', '1153284',
+        '--message', text
+    ])
+    
+    # Mark as sent
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    os.rename(latest, f'data/telegram_outbox/digest_{timestamp}.sent')
+```
+
+### Method 2: OpenClaw Heartbeat (Polling)
+OpenClaw agent checks `telegram_outbox/` every ~30 min:
+```python
+# In HEARTBEAT.md
+if exists('telegram_outbox/digest_latest.txt'):
+    message.send(channel='telegram', target='1153284', text=read_file(...))
+    rename_to_sent()
+```
+
+### Telegram Format
+```
+🎯 SaaS Opportunities — Feb 15, 2026
 
 1. ⭐️ Alternative to Supademo (92 pts)
-   💰 "Sick of paying $40/month for ONE demo"
-   📍 Reddit r/SaaS, 15 upvotes
-   🔗 reddit.com/r/SaaS/...
+   📍 reddit:SaaS
+   🔗 https://reddit.com/r/SaaS/...
 
 2. ⭐️ Workflow Automation (85 pts)
-   💰 "Better than Zapier for complex workflows"
-   📍 Reddit r/nocode, 8 comments
-   
-3. 💡 Email Management AI (72 pts)
-   📍 Reddit r/SaaS, "20+ emails daily"
+   📍 reddit:nocode
+   🔗 ...
 
-📊 24 collected | 12 processed | 5 top-tier
+📊 39 collected | 2 high quality (60+)
 
-View full digest: /digest
+Full digest: ~/saas-hunter/data/digests/
 ```
-
-### Option B: Web Dashboard (Future)
-
-Simple HTML page with:
-- Today's opportunities (scored)
-- Weekly trends
-- Search/filter by domain
-- Export to CSV
 
 ---
 
-## 5. Data Flow Example
+## Data Flow Example
 
-### Day in the Life (Feb 8, 2026)
+**Timeline: Feb 15, 2026**
 
-**00:00** - Reddit collector runs → 4 opportunities  
-**03:00** - Reddit collector runs → 3 opportunities  
-**04:00** - HN collector runs → 1 opportunity  
-**06:00** - Reddit collector runs → 5 opportunities  
-**06:00** - GitHub collector runs (Sunday) → 2 opportunities  
-**06:30** - Processor runs:
-  - Loads 15 raw opportunities
-  - Scores each (0-100)
-  - Deduplicates → 12 unique
-  - Saves to `processed/opportunities_20260208.jsonl`
-
-**08:00** - Digest generator runs:
-  - Loads processed file
-  - Ranks by score
-  - Groups by domain
-  - Generates `digests/digest_20260208.md`
-
-**08:01** - Telegram delivery:
-  - Reads digest
-  - Formats top 3
-  - Sends message to you
-
-**Throughout day:** Reddit/HN continue collecting...
+| Time  | Event | Output |
+|-------|-------|--------|
+| 00:05 | Reddit run #1 | `reddit_20260215_000523.json` (4 opps) |
+| 03:05 | Reddit run #2 | `reddit_20260215_030523.json` (3 opps) |
+| 04:15 | HN run | `hackernews_20260215_041502.json` (2 opps) |
+| 06:00 | GitHub run | `github_20260215_060037.json` (5 opps) |
+| 06:25 | **Processor** | Loads 14 opps → scores → dedupes → saves `opportunities_20260215.jsonl` (12 unique) |
+| 08:00 | **Digest generator** | Reads 12 opps → ranks → generates `digest_20260215.md` |
+| 08:00 | **Telegram send** | Reads digest → sends top 3 → renames to `.sent` |
+| 09:05 | Reddit run #3 | `reddit_20260215_090523.json` (6 opps) |
+| ... | ... | ... |
+| 18:25 | **Processor** | Loads opps from 06:00-18:00 → scores → appends to JSONL |
 
 ---
 
-## 6. Storage Strategy
+## File Retention Policy
 
-### File Retention
+| Directory | Retention | Reason |
+|-----------|-----------|--------|
+| `data/raw/` | 7 days | Archive after 1 week (compress with gzip) |
+| `data/processed/` | 30 days | Compress after 1 month |
+| `data/digests/` | Forever | Small text files, useful for historical analysis |
+| `data/seen_ids.json` | Forever | Needed for deduplication |
+| `logs/` | 30 days | Rotate monthly |
 
-```
-raw/        — Keep 7 days, then archive
-processed/  — Keep 30 days, then compress
-digests/    — Keep forever (small files)
-seen_ids    — Keep forever, grows slowly
-```
-
-### Cleanup Script
-
+**Cleanup script (run weekly):**
 ```bash
-# Run weekly
-find data/raw -mtime +7 -name "*.json" -exec gzip {} \;
-find data/processed -mtime +30 -name "*.jsonl" -exec gzip {} \;
+find data/raw -name "*.json" -mtime +7 -exec gzip {} \;
+find data/processed -name "*.jsonl" -mtime +30 -exec gzip {} \;
+find logs -name "*.log" -mtime +30 -delete
 ```
 
 ---
 
-## 7. Quality Monitoring
+## Configuration Files
 
-### Metrics to Track
-
-**Collection Health:**
+### `scoring_config.json`
 ```json
 {
-  "date": "2026-02-08",
-  "collected": {
-    "reddit": 24,
-    "hackernews": 6,
-    "github": 2,
-    "total": 32
+  "source_weights": {
+    "github": 20,
+    "hackernews": 15,
+    "reddit": 10
   },
-  "processed": {
-    "total": 32,
-    "deduplicated": 18,
-    "scored_80plus": 3
+  "engagement_weights": {
+    "reactions_multiplier": 2,
+    "comments_max": 10,
+    "score_max": 10
   },
-  "avg_score": 58.5
+  "pain_keywords": [
+    "sick of",
+    "frustrated",
+    "hate",
+    "tired of"
+  ],
+  "pay_keywords": [
+    "would pay",
+    "expensive",
+    "pricing"
+  ],
+  "min_score_threshold": 40,
+  "freshness_hours": {
+    "high": 6,
+    "medium": 24,
+    "low": 72
+  }
 }
 ```
 
-**Weekly Review:**
-- How many opportunities became actionable?
-- Precision per source (manual review sample)
-- Keyword effectiveness
-- Score distribution
-
----
-
-## 8. Processing Script Skeleton
-
+### `scripts/config.py`
 ```python
-#!/usr/bin/env python3
-"""
-Process raw opportunities: score, deduplicate, enrich
-"""
-from pathlib import Path
-import json
-from datetime import datetime, timedelta
-
-def main():
-    # 1. Find new raw files since last run
-    last_run = load_last_run_time()
-    raw_files = find_new_files('data/raw', since=last_run)
-    
-    # 2. Load all opportunities
-    all_opps = []
-    for file in raw_files:
-        opps = load_json(file)['opportunities']
-        all_opps.extend(opps)
-    
-    # 3. Score each
-    for opp in all_opps:
-        opp['score'] = score_opportunity(opp)
-    
-    # 4. Deduplicate
-    unique_opps = deduplicate(all_opps)
-    
-    # 5. Enrich
-    for opp in unique_opps:
-        opp['opportunity_id'] = generate_id(opp)
-        opp['domain'] = classify_domain(opp)
-        opp['processed_at'] = datetime.now().isoformat()
-    
-    # 6. Save as JSONL (one per line)
-    today = datetime.now().strftime('%Y%m%d')
-    output = f'data/processed/opportunities_{today}.jsonl'
-    
-    with open(output, 'a') as f:
-        for opp in unique_opps:
-            f.write(json.dumps(opp) + '\n')
-    
-    # 7. Update last run time
-    save_last_run_time()
-    
-    print(f"Processed {len(all_opps)} → {len(unique_opps)} unique")
-    print(f"Top score: {max(o['score'] for o in unique_opps)}")
-
-if __name__ == '__main__':
-    main()
+SUBREDDITS = ['SaaS', 'startups', 'Entrepreneur', 'smallbusiness', 'sales']
+GITHUB_TOPICS = ['saas', 'productivity', 'developer-tools', 'automation']
+MIN_REDDIT_UPVOTES = 3
+MIN_HN_SCORE = 5
+MIN_GITHUB_REACTIONS = 5
 ```
 
 ---
 
-## 9. Implementation Plan
+## Performance Metrics
 
-### Phase 1: Core Processing (Week 1)
-- [x] Collection layer (done)
-- [ ] Build `process_opportunities.py` (scoring + dedup)
-- [ ] Build `generate_digest.py` (markdown output)
-- [ ] Test end-to-end with sample data
-- [ ] Set up cron jobs
+### Collection Health (Daily)
+```json
+{
+  "date": "2026-02-15",
+  "collected": {
+    "reddit": 32,
+    "hackernews": 12,
+    "github": 5,
+    "total": 49
+  },
+  "processed": {
+    "total": 49,
+    "deduplicated": 39,
+    "scored_60plus": 2
+  },
+  "avg_score": 52.3
+}
+```
 
-### Phase 2: Delivery (Week 2)
-- [ ] Telegram bot integration
-- [ ] Daily digest delivery
-- [ ] Alert for high-score opportunities (>85)
+### API Usage
+- Reddit: ~60 requests/day (well within 60/min limit)
+- GitHub: ~20 requests/day (well within 5,000/hour limit)
+- HN: RSS feed, no rate limit
 
-### Phase 3: Refinement (Month 2)
-- [ ] Improve scoring algorithm based on feedback
-- [ ] Add domain clustering (ML-based)
-- [ ] Track opportunity outcomes (which became products?)
-- [ ] Web dashboard (optional)
-
----
-
-## 10. Budget Impact
-
-**Current:**
-- Collection: $0 (all free APIs)
-- Storage: ~5MB/day = ~150MB/month
-- Processing: Local, $0
-
-**Future (if scaling):**
-- OpenAI for clustering/summarization: ~$2-5/month
-- Database (optional): PostgreSQL on VPS, $5/month
-- Total: <$15/month budget ✅
+### Storage Growth
+- Raw JSON: ~1-2 MB/day
+- Processed JSONL: ~500 KB/day
+- Digests: ~5 KB/day
+- **Total: ~3 MB/day (~90 MB/month)**
 
 ---
 
-## Key Decisions
+## Error Handling
 
-### ✅ Recommended Approach
+### Collection Failures
+- **Network errors:** Retry with exponential backoff (3 attempts)
+- **API rate limits:** Log warning, skip run, resume next cycle
+- **Invalid responses:** Log error, continue with partial data
 
-1. **Storage:** File-based (JSONL) — Simple, cheap, portable
-2. **Processing:** Python scripts — Easy to modify, debug
-3. **Delivery:** Telegram — Instant, mobile-friendly
-4. **Frequency:** Process every 6h, digest daily @ 8 AM
-5. **Retention:** 7d raw, 30d processed, infinite digests
+### Processing Failures
+- **Missing raw files:** Skip, log warning
+- **Corrupt JSON:** Skip file, log error, continue with others
+- **Scoring errors:** Default to score=0, flag for review
 
-### ⚠️ Avoid For Now
-- Real-time processing (overkill for daily insights)
-- Database (adds complexity, not needed yet)
-- ML clustering (simple keyword matching works)
-- Web dashboard (Telegram sufficient initially)
-
----
-
-## Questions to Answer
-
-Before implementing:
-
-1. **Delivery preference?**
-   - Telegram daily digest?
-   - Email?
-   - Just files to review manually?
-
-2. **Alert threshold?**
-   - Should scores >85 trigger immediate notification?
-   - Or just wait for daily digest?
-
-3. **Storage location?**
-   - Keep in ~/saas-hunter/data?
-   - Or separate analytics folder?
-
-4. **Processing frequency?**
-   - Every 6 hours?
-   - Only after GitHub runs?
-   - Before daily digest only?
+### Delivery Failures
+- **Telegram API down:** Keep digest in outbox, retry on next heartbeat
+- **Message too long:** Truncate to top 3 opportunities
 
 ---
 
-**Ready to implement?** Let me know your preferences and I'll build the processing + digest scripts.
+## Monitoring & Alerts
+
+### Daily Health Check
+```bash
+# Check last digest was generated
+test -f data/digests/digest_$(date +%Y%m%d).md || echo "⚠️ No digest today"
+
+# Check opportunity count
+wc -l data/processed/opportunities_$(date +%Y%m%d).jsonl
+
+# Check cron logs for errors
+tail -100 logs/cron_*.log | grep -i error
+```
+
+### Alert Thresholds
+- No opportunities collected for >12h → Alert
+- No digest generated by 9 AM → Alert
+- Avg score drops below 30 → Review filters
+
+---
+
+## Future Enhancements
+
+### Phase 2: ML-Based Improvements
+- **Clustering:** Group similar opportunities (ML embeddings)
+- **Sentiment analysis:** Detect urgency/willingness to pay
+- **Competitor extraction:** NER model to find mentioned products
+
+### Phase 3: Analytics Dashboard
+- Web UI for browsing opportunities
+- Trend charts (domains over time)
+- Search/filter by keyword, domain, score
+
+### Phase 4: Feedback Loop
+- Track which opportunities you act on
+- Retrain scoring model based on your picks
+- Personalized score weights
+
+---
+
+## Technical Decisions
+
+### Why File-Based Storage?
+- **Simple:** No database to manage
+- **Portable:** Easy to backup, migrate
+- **Debuggable:** Human-readable JSON/JSONL
+- **Cheap:** Zero cost vs database hosting
+
+### Why JSONL for Processed?
+- **Append-friendly:** Add new opportunities throughout the day
+- **Grep-able:** `grep '"score":9' opportunities.jsonl`
+- **Line-by-line processing:** Stream large files without loading all into memory
+
+### Why Cron vs Real-Time?
+- **Cost:** No need for 24/7 server process
+- **Focus:** Daily digest > live feed
+- **Simplicity:** Standard Unix tooling, no message queue needed
+
+---
+
+## Dependencies
+
+See `requirements.txt`:
+```
+praw>=7.0.0              # Reddit API
+feedparser>=6.0.0        # HN RSS
+PyGithub>=1.55           # GitHub API
+requests>=2.28.0         # HTTP client
+beautifulsoup4>=4.11.0   # HTML parsing
+python-dotenv>=0.20.0    # .env loading
+```
+
+---
+
+**Questions?** Open an issue on [GitHub](https://github.com/Alexeyisme/saas-hunter).

@@ -37,3 +37,6 @@ logs/
 # Test files
 test_*.py
 *_test.py
+# Archived files (development history)
+archive/
+
