@@ -9,16 +9,16 @@ from pathlib import Path
 from datetime import datetime
 from usage_tracker import UsageTracker
 from utils import setup_logging
-
-# Setup logging
-LOG_DIR = Path(__file__).parent.parent / 'logs'
-logger = setup_logging(__name__, LOG_DIR / 'telegram.log')
+from config import LOG_DIR, PROCESSED_DIR, TELEGRAM_TOP_N
+from scoring import SCORING_CONFIG
 
 # Paths
 DATA_DIR = Path(__file__).parent.parent / 'data'
-PROCESSED_DIR = DATA_DIR / 'processed'
 OUTBOX_DIR = DATA_DIR / 'telegram_outbox'
 OUTBOX_DIR.mkdir(parents=True, exist_ok=True)
+
+# Setup logging
+logger = setup_logging(__name__, LOG_DIR / 'telegram.log')
 
 def load_today_opportunities():
     """Load today's processed opportunities"""
@@ -42,22 +42,25 @@ def format_telegram_message(opportunities):
     
     # Sort by score
     sorted_opps = sorted(opportunities, key=lambda x: x.get('score', 0), reverse=True)
-    
-    # Get top 3
-    top_3 = sorted_opps[:3]
+
+    # Get top N from config
+    top_n = sorted_opps[:TELEGRAM_TOP_N]
     
     # Build message
     date_str = datetime.now().strftime('%b %d, %Y')
     msg = f"🎯 **SaaS Opportunities — {date_str}**\n\n"
-    
-    for i, opp in enumerate(top_3, 1):
+
+    # Get score threshold from config
+    high_quality_threshold = SCORING_CONFIG.get('thresholds', {}).get('high_quality', 60)
+
+    for i, opp in enumerate(top_n, 1):
         title = opp['title']
         score = opp['score']
         source = opp['source']
         url = opp['url']
-        
+
         # Pain point emoji
-        emoji = "⭐️" if score >= 60 else "💡"
+        emoji = "⭐️" if score >= high_quality_threshold else "💡"
         
         msg += f"{i}. {emoji} **{title}** ({score} pts)\n"
         msg += f"   📍 {source}\n"
@@ -73,9 +76,9 @@ def format_telegram_message(opportunities):
     
     # Summary
     total = len(opportunities)
-    high_quality = len([o for o in opportunities if o.get('score', 0) >= 60])
-    
-    msg += f"📊 {total} collected | {high_quality} high quality (60+)\n\n"
+    high_quality = len([o for o in opportunities if o.get('score', 0) >= high_quality_threshold])
+
+    msg += f"📊 {total} collected | {high_quality} high quality ({high_quality_threshold}+)\n\n"
     
     # View full digest hint
     msg += "_Full digest: ~/saas-hunter/data/digests/_"

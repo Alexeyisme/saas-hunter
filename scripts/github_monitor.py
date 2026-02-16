@@ -15,26 +15,23 @@ from datetime import datetime, timedelta
 from config import (
     RAW_DIR, GITHUB_TOKEN, GITHUB_REPOSITORIES, GITHUB_FEATURE_LABELS,
     REQUEST_TIMEOUT, API_CALL_DELAY, RETRY_DELAY, API_PER_PAGE,
-    BODY_PREVIEW_LENGTH, GITHUB_HOURS_BACK, USER_AGENT, LOG_DIR
+    BODY_PREVIEW_LENGTH, GITHUB_HOURS_BACK, USER_AGENT, LOG_DIR,
+    GITHUB_RATE_LIMIT_WARNING, GITHUB_REACTION_THRESHOLD, GITHUB_REPO_DELAY, GITHUB_SEARCH_API_URL
 )
 from utils import (
-    setup_logging, DuplicateDetector, normalize_opportunity,
-    calculate_engagement_score
+    setup_logging, DuplicateDetector, normalize_opportunity
 )
 from usage_tracker import UsageTracker
 
 # Setup logging
 logger = setup_logging(__name__, LOG_DIR / 'github_monitor.log')
 
-# Rate limiting
-RATE_LIMIT_WARNING_THRESHOLD = 10
-
 def fetch_github_search_issues(hours_back: int, duplicate_detector: DuplicateDetector):
     """Fetch issues/PRs from GitHub Search API matching query."""
     results = []
-    
+
     since_date = (datetime.now() - timedelta(hours=hours_back)).strftime('%Y-%m-%dT%H:%M:%SZ')
-    search_api_url = 'https://api.github.com/search/issues'
+    search_api_url = GITHUB_SEARCH_API_URL
     
     headers = {
         'Accept': 'application/vnd.github.v3.text-match+json',
@@ -48,8 +45,7 @@ def fetch_github_search_issues(hours_back: int, duplicate_detector: DuplicateDet
         
         # Use reactions as a proxy for feature requests people care about
         # Bugs get comments, features get 👍 reactions
-        # Reaction threshold of 2 filters out noise while catching popular requests
-        search_query = f"is:open is:issue created:>{since_date} repo:{repo} reactions:>2"
+        search_query = f"is:open is:issue created:>{since_date} repo:{repo} reactions:>{GITHUB_REACTION_THRESHOLD}"
 
         params = {
             'q': search_query,
@@ -67,7 +63,7 @@ def fetch_github_search_issues(hours_back: int, duplicate_detector: DuplicateDet
                 # Check rate limit
                 remaining = int(response.headers.get('X-RateLimit-Remaining', 0))
                 logger.info(f"    Rate limit remaining: {remaining}")
-                if remaining < RATE_LIMIT_WARNING_THRESHOLD:
+                if remaining < GITHUB_RATE_LIMIT_WARNING:
                     logger.warning(f"Approaching GitHub API rate limit. Remaining: {remaining}")
 
                 response.raise_for_status()
@@ -142,10 +138,9 @@ def fetch_github_search_issues(hours_back: int, duplicate_detector: DuplicateDet
             except Exception as e:
                 logger.error(f"Unexpected error processing GitHub issues for {repo}: {e}")
                 break
-        
-        # Delay between repos to avoid rate limiting (30 req/min = 2 sec/req)
-        # Adding 3 seconds to be safe
-        time.sleep(3)
+
+        # Delay between repos to avoid rate limiting
+        time.sleep(GITHUB_REPO_DELAY)
                 
     return results
 
@@ -163,34 +158,39 @@ def main():
 
         duplicate_detector = DuplicateDetector()
         all_results = []
-    
-    # Fetch issues using our combined search query
-    logger.info("Scanning GitHub for feature requests...")
-    issues = fetch_github_search_issues(hours_back=GITHUB_HOURS_BACK, duplicate_detector=duplicate_detector)
-    all_results.extend(issues)
-    logger.info(f" ✓ Found {len(issues)} new opportunities (duplicates filtered)")
-    
-    # Save seen IDs
-    duplicate_detector.save()
-    
-    # Save results
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_file = RAW_DIR / f'github_{timestamp}.json'
-    
-    normalized_opportunities = [normalize_opportunity(item) for item in all_results]
 
-    output_data = {
-        'scan_time': datetime.now().isoformat(),
-        'total_opportunities': len(normalized_opportunities),
-        'sources_scanned': GITHUB_REPOSITORIES,
-        'method': 'GitHub Search API',
-        'hours_back': GITHUB_HOURS_BACK,
-        'opportunities': normalized_opportunities
-    }
+        # Fetch issues using our combined search query
+        logger.info("Scanning GitHub for feature requests...")
+        issues = fetch_github_search_issues(hours_back=GITHUB_HOURS_BACK, duplicate_detector=duplicate_detector)
+        all_results.extend(issues)
+        logger.info(f" ✓ Found {len(issues)} new opportunities (duplicates filtered)")
 
-    with open(output_file, 'w') as f:
-        json.dump(output_data, f, indent=2)
-    
+        # Save seen IDs
+        duplicate_detector.save()
+
+        # Save results as JSONL
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_file = RAW_DIR / f'github_{timestamp}.jsonl'
+
+        normalized_opportunities = [normalize_opportunity(item) for item in all_results]
+
+        # Write as JSONL: metadata first, then one opportunity per line
+        with open(output_file, 'w') as f:
+            # First line: metadata
+            metadata = {
+                '_metadata': True,
+                'scan_time': datetime.now().isoformat(),
+                'total_opportunities': len(normalized_opportunities),
+                'sources_scanned': GITHUB_REPOSITORIES,
+                'method': 'GitHub Search API',
+                'hours_back': GITHUB_HOURS_BACK
+            }
+            f.write(json.dumps(metadata) + '\n')
+
+            # Subsequent lines: individual opportunities
+            for opp in normalized_opportunities:
+                f.write(json.dumps(opp) + '\n')
+
         logger.info("")
         logger.info("=" * 60)
         logger.info(f"Summary:")
@@ -198,10 +198,10 @@ def main():
         logger.info(f" Total seen IDs tracked: {len(duplicate_detector.seen_ids)}")
         logger.info(f" Saved to: {output_file}")
         logger.info("=" * 60)
-        
+
         job['items_processed'] = len(all_results)
-        
-        return str(output_file)
+
+    return str(output_file)
 
 if __name__ == '__main__':
     if not GITHUB_TOKEN:

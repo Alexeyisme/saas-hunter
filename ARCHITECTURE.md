@@ -24,13 +24,13 @@ SaaS Hunter is a 4-layer pipeline system that transforms raw social media data i
 │ LAYER 1: COLLECTION (Cron-triggered)                           │
 │                                                                 │
 │  Reddit Monitor (every 3h)                                     │
-│    └─→ raw/reddit_YYYYMMDD_HHMMSS.json                        │
+│    └─→ raw/reddit_YYYYMMDD_HHMMSS.jsonl                       │
 │                                                                 │
 │  HackerNews Monitor (every 4h)                                 │
-│    └─→ raw/hackernews_YYYYMMDD_HHMMSS.json                    │
+│    └─→ raw/hackernews_YYYYMMDD_HHMMSS.jsonl                   │
 │                                                                 │
 │  GitHub Monitor (daily 6 AM)                                   │
-│    └─→ raw/github_YYYYMMDD_HHMMSS.json                        │
+│    └─→ raw/github_YYYYMMDD_HHMMSS.jsonl                       │
 │                                                                 │
 │  Deduplication: seen_ids.json                                  │
 └──────────────────────┬──────────────────────────────────────────┘
@@ -103,29 +103,16 @@ Continuously gather raw opportunities from multiple sources.
 - **Subreddits:** r/SaaS, r/startups, r/Entrepreneur, r/smallbusiness, r/sales
 - **Filter:** Posts from last 24h, min 3 upvotes
 - **API:** PRAW (Reddit API wrapper)
-- **Output:** `data/raw/reddit_YYYYMMDD_HHMMSS.json`
+- **Output:** `data/raw/reddit_YYYYMMDD_HHMMSS.jsonl`
 
-**Example Output:**
-```json
-{
-  "source": "reddit",
-  "subreddit": "SaaS",
-  "collected_at": "2026-02-15T06:05:23Z",
-  "count": 12,
-  "opportunities": [
-    {
-      "id": "1r4xh7c",
-      "title": "6 years in sales, moving to SF...",
-      "url": "https://reddit.com/r/sales/...",
-      "author": "username",
-      "upvotes": 15,
-      "num_comments": 8,
-      "body": "Full post text...",
-      "created_utc": "2026-02-15T04:23:10Z"
-    }
-  ]
-}
+**Example Output (JSONL format):**
+
+```jsonl
+{"_metadata": true, "scan_time": "2026-02-15T06:05:23Z", "total_opportunities": 12, "sources_scanned": ["SaaS", "startups"], "method": "RSS (no API)", "hours_back": 6}
+{"source_id": "1r4xh7c", "source": "reddit:sales", "title": "6 years in sales, moving to SF...", "url": "https://reddit.com/r/sales/...", "published_utc": "2026-02-15T04:23:10Z", "engagement_data": {"keywords": ["looking for"]}, "collected_at": "2026-02-15T06:05:23Z"}
 ```
+
+**Note:** First line is metadata, subsequent lines are individual opportunities.
 
 #### HackerNews Monitor
 - **Script:** `hackernews_monitor.py`
@@ -133,16 +120,16 @@ Continuously gather raw opportunities from multiple sources.
 - **Sources:** Show HN, Ask HN, trending stories
 - **Filter:** Min 5 points, posted in last 48h
 - **API:** HN RSS feed + Algolia API
-- **Output:** `data/raw/hackernews_YYYYMMDD_HHMMSS.json`
+- **Output:** `data/raw/hackernews_YYYYMMDD_HHMMSS.jsonl`
 
 #### GitHub Monitor
 - **Script:** `github_monitor.py`
 - **Frequency:** Daily at 6 AM UTC
-- **Targets:** 
+- **Targets:**
   - Trending repos (topics: saas, productivity, developer-tools)
   - Issues with 5+ reactions
 - **API:** PyGithub (GitHub API v3)
-- **Output:** `data/raw/github_YYYYMMDD_HHMMSS.json`
+- **Output:** `data/raw/github_YYYYMMDD_HHMMSS.jsonl`
 
 ### Deduplication
 - **File:** `data/seen_ids.json`
@@ -419,14 +406,14 @@ Full digest: ~/saas-hunter/data/digests/
 
 | Time  | Event | Output |
 |-------|-------|--------|
-| 00:05 | Reddit run #1 | `reddit_20260215_000523.json` (4 opps) |
-| 03:05 | Reddit run #2 | `reddit_20260215_030523.json` (3 opps) |
-| 04:15 | HN run | `hackernews_20260215_041502.json` (2 opps) |
-| 06:00 | GitHub run | `github_20260215_060037.json` (5 opps) |
+| 00:05 | Reddit run #1 | `reddit_20260215_000523.jsonl` (4 opps) |
+| 03:05 | Reddit run #2 | `reddit_20260215_030523.jsonl` (3 opps) |
+| 04:15 | HN run | `hackernews_20260215_041502.jsonl` (2 opps) |
+| 06:00 | GitHub run | `github_20260215_060037.jsonl` (5 opps) |
 | 06:25 | **Processor** | Loads 14 opps → scores → dedupes → saves `opportunities_20260215.jsonl` (12 unique) |
 | 08:00 | **Digest generator** | Reads 12 opps → ranks → generates `digest_20260215.md` |
 | 08:00 | **Telegram send** | Reads digest → sends top 3 → renames to `.sent` |
-| 09:05 | Reddit run #3 | `reddit_20260215_090523.json` (6 opps) |
+| 09:05 | Reddit run #3 | `reddit_20260215_090523.jsonl` (6 opps) |
 | ... | ... | ... |
 | 18:25 | **Processor** | Loads opps from 06:00-18:00 → scores → appends to JSONL |
 
@@ -444,7 +431,7 @@ Full digest: ~/saas-hunter/data/digests/
 
 **Cleanup script (run weekly):**
 ```bash
-find data/raw -name "*.json" -mtime +7 -exec gzip {} \;
+find data/raw -name "*.jsonl" -mtime +7 -exec gzip {} \;
 find data/processed -name "*.jsonl" -mtime +30 -exec gzip {} \;
 find logs -name "*.log" -mtime +30 -delete
 ```

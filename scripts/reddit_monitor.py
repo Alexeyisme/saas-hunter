@@ -29,8 +29,9 @@ logger = setup_logging(__name__, LOG_DIR / 'reddit_monitor.log')
 
 def fetch_subreddit_rss(subreddit: str, hours_back: int, duplicate_detector: DuplicateDetector):
     """Fetch posts from a subreddit's RSS feed."""
+    from config import API_PER_PAGE
     results = []
-    rss_url = f'https://www.reddit.com/r/{subreddit}/new/.rss?limit=100'
+    rss_url = f'https://www.reddit.com/r/{subreddit}/new/.rss?limit={API_PER_PAGE}'
     
     try:
         logger.info(f"Fetching: {rss_url}")
@@ -128,38 +129,40 @@ def main():
 
         duplicate_detector = DuplicateDetector()
         all_results = []
-    
-    for sub in REDDIT_SUBREDDITS:
-        logger.info(f"Scanning r/{sub}...")
-        results = fetch_subreddit_rss(sub, hours_back=COLLECTION_HOURS_BACK, duplicate_detector=duplicate_detector)
-        all_results.extend(results)
-        logger.info(f" ✓ Found {len(results)} new opportunities (duplicates filtered)")
-    
-    # Save seen IDs
-    duplicate_detector.save()
-    
-    # Normalize results into a common schema if needed, but for now passing as is.
-    # The processing script will handle normalization.
 
-    # Save results
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_file = RAW_DIR / f'reddit_{timestamp}.json'
-    
-    # Normalize opportunities
-    normalized_opportunities = [normalize_opportunity(item) for item in all_results]
+        for sub in REDDIT_SUBREDDITS:
+            logger.info(f"Scanning r/{sub}...")
+            results = fetch_subreddit_rss(sub, hours_back=COLLECTION_HOURS_BACK, duplicate_detector=duplicate_detector)
+            all_results.extend(results)
+            logger.info(f" ✓ Found {len(results)} new opportunities (duplicates filtered)")
 
-    output_data = {
-        'scan_time': datetime.now().isoformat(),
-        'total_opportunities': len(normalized_opportunities),
-        'sources_scanned': REDDIT_SUBREDDITS,
-        'method': 'RSS (no API)',
-        'hours_back': COLLECTION_HOURS_BACK,
-        'opportunities': normalized_opportunities
-    }
+        # Save seen IDs
+        duplicate_detector.save()
 
-    with open(output_file, 'w') as f:
-        json.dump(output_data, f, indent=2)
-    
+        # Save results as JSONL
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_file = RAW_DIR / f'reddit_{timestamp}.jsonl'
+
+        # Normalize opportunities
+        normalized_opportunities = [normalize_opportunity(item) for item in all_results]
+
+        # Write as JSONL: metadata first, then one opportunity per line
+        with open(output_file, 'w') as f:
+            # First line: metadata
+            metadata = {
+                '_metadata': True,
+                'scan_time': datetime.now().isoformat(),
+                'total_opportunities': len(normalized_opportunities),
+                'sources_scanned': REDDIT_SUBREDDITS,
+                'method': 'RSS (no API)',
+                'hours_back': COLLECTION_HOURS_BACK
+            }
+            f.write(json.dumps(metadata) + '\n')
+
+            # Subsequent lines: individual opportunities
+            for opp in normalized_opportunities:
+                f.write(json.dumps(opp) + '\n')
+
         logger.info("")
         logger.info("=" * 60)
         logger.info(f"Summary:")
@@ -167,10 +170,10 @@ def main():
         logger.info(f" Total seen IDs tracked: {len(duplicate_detector.seen_ids)}")
         logger.info(f" Saved to: {output_file}")
         logger.info("=" * 60)
-        
+
         job['items_processed'] = len(all_results)
-        
-        return str(output_file)
+
+    return str(output_file)
 
 if __name__ == '__main__':
     try:

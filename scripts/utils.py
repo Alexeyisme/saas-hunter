@@ -98,14 +98,6 @@ def clean_html(html_content: str) -> str:
         return re.sub(clean, '', html_content)
 
 
-# Engagement Scoring
-def calculate_engagement_score(comments: int = 0, reactions: int = 0, upvotes: int = 0) -> float:
-    """Calculate engagement score from various metrics (0-15 points)."""
-    # Weighted combination of engagement signals
-    score = (comments * 0.5) + (reactions * 0.3) + (upvotes * 0.2)
-    return min(15.0, score)
-
-
 # Data Validation
 def validate_opportunity(opp: Dict[str, Any]) -> bool:
     """Validate that an opportunity has all required fields."""
@@ -115,11 +107,12 @@ def validate_opportunity(opp: Dict[str, Any]) -> bool:
 
 def normalize_opportunity(item: Dict[str, Any]) -> Dict[str, Any]:
     """Normalize opportunity data to standard schema."""
+    from config import BODY_PREVIEW_LENGTH
     return {
         'source_id': str(item.get('source_id', '')),
         'source': item.get('source', ''),
         'title': item.get('title', ''),
-        'body': item.get('body', '')[:500],  # Truncate to 500 chars
+        'body': item.get('body', '')[:BODY_PREVIEW_LENGTH],
         'url': item.get('url', ''),
         'published_utc': item.get('published_utc', ''),
         'engagement_data': item.get('engagement_data', {}),
@@ -129,21 +122,26 @@ def normalize_opportunity(item: Dict[str, Any]) -> Dict[str, Any]:
 
 # File Utilities
 def load_recent_json_files(directory: Path, hours_back: int = 24) -> List[Dict[str, Any]]:
-    """Load and combine opportunities from recent JSON files."""
+    """Load and combine opportunities from recent JSONL files."""
     from datetime import timedelta
-    
+
     cutoff_time = datetime.now() - timedelta(hours=hours_back)
     all_opportunities = []
-    
-    for file_path in sorted(directory.glob('*.json'), key=lambda p: p.stat().st_mtime, reverse=True):
+
+    for file_path in sorted(directory.glob('*.jsonl'), key=lambda p: p.stat().st_mtime, reverse=True):
         if datetime.fromtimestamp(file_path.stat().st_mtime) >= cutoff_time:
             try:
                 with open(file_path, 'r') as f:
-                    data = json.load(f)
-                    opportunities = data.get('opportunities', [])
-                    if isinstance(opportunities, list):
-                        all_opportunities.extend(opportunities)
-            except (json.JSONDecodeError, IOError) as e:
+                    for line in f:
+                        try:
+                            data = json.loads(line.strip())
+                            # Skip metadata line
+                            if data.get('_metadata'):
+                                continue
+                            all_opportunities.append(data)
+                        except json.JSONDecodeError:
+                            continue
+            except IOError as e:
                 logging.warning(f"Failed to load {file_path}: {e}")
-    
+
     return all_opportunities

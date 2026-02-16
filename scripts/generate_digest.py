@@ -9,19 +9,25 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 from usage_tracker import UsageTracker
 from utils import setup_logging
-
-# Setup logging
-LOG_DIR = Path(__file__).parent.parent / 'logs'
-logger = setup_logging(__name__, LOG_DIR / 'digest.log')
+from config import (
+    LOG_DIR, PROCESSED_DIR, DIGEST_HOURS_BACK,
+    DIGEST_TOP_TIER_LIMIT, DIGEST_HIGH_POTENTIAL_LIMIT, DIGEST_WORTH_EXPLORING_LIMIT,
+    DIGEST_BODY_PREVIEW
+)
+from scoring import SCORING_CONFIG
 
 # Paths
 DATA_DIR = Path(__file__).parent.parent / 'data'
-PROCESSED_DIR = DATA_DIR / 'processed'
 DIGEST_DIR = DATA_DIR / 'digests'
 DIGEST_DIR.mkdir(parents=True, exist_ok=True)
 
-def load_recent_opportunities(hours=24):
+# Setup logging
+logger = setup_logging(__name__, LOG_DIR / 'digest.log')
+
+def load_recent_opportunities(hours=None):
     """Load processed opportunities from last N hours"""
+    if hours is None:
+        hours = DIGEST_HOURS_BACK
     cutoff = datetime.now() - timedelta(hours=hours)
     opportunities = []
     
@@ -63,7 +69,7 @@ def format_opportunity(opp, rank):
     domain = opp.get('domain', 'other')
     
     # Extract key pain points from body
-    body = opp.get('body', '')[:200]
+    body = opp.get('body', '')[:DIGEST_BODY_PREVIEW]
     
     # Engagement info
     engagement = opp.get('engagement_data', {})
@@ -114,40 +120,45 @@ def generate_digest(opportunities):
     """Generate markdown digest"""
     if not opportunities:
         return None
-    
+
     # Sort by score
     sorted_opps = sorted(opportunities, key=lambda x: x.get('score', 0), reverse=True)
-    
+
     # Date
     date_str = datetime.now().strftime('%B %d, %Y')
-    
+
+    # Get score thresholds from config
+    top_tier_threshold = SCORING_CONFIG.get('thresholds', {}).get('top_tier', 80)
+    high_quality_threshold = SCORING_CONFIG.get('thresholds', {}).get('high_quality', 60)
+    minimum_score = SCORING_CONFIG.get('thresholds', {}).get('minimum_score', 40)
+
     # Start digest
     md = f"# SaaS Opportunities — {date_str}\n\n"
     md += f"**Summary:** {len(opportunities)} opportunities collected and processed\n\n"
     md += "---\n\n"
-    
-    # Top tier (80+)
-    top_tier = [o for o in sorted_opps if o.get('score', 0) >= 80]
+
+    # Top tier
+    top_tier = [o for o in sorted_opps if o.get('score', 0) >= top_tier_threshold]
     if top_tier:
-        md += "## 🔥 Top Opportunities (Score 80+)\n\n"
-        for i, opp in enumerate(top_tier[:5], 1):
+        md += f"## 🔥 Top Opportunities (Score {top_tier_threshold}+)\n\n"
+        for i, opp in enumerate(top_tier[:DIGEST_TOP_TIER_LIMIT], 1):
             md += format_opportunity(opp, i)
         md += "---\n\n"
-    
-    # High potential (60-79)
-    high_potential = [o for o in sorted_opps if 60 <= o.get('score', 0) < 80]
+
+    # High potential
+    high_potential = [o for o in sorted_opps if high_quality_threshold <= o.get('score', 0) < top_tier_threshold]
     if high_potential:
-        md += "## ⭐ High Potential (Score 60-79)\n\n"
-        for i, opp in enumerate(high_potential[:5], 1):
+        md += f"## ⭐ High Potential (Score {high_quality_threshold}-{top_tier_threshold-1})\n\n"
+        for i, opp in enumerate(high_potential[:DIGEST_HIGH_POTENTIAL_LIMIT], 1):
             md += format_opportunity(opp, i)
         md += "---\n\n"
-    
-    # Worth exploring (40-59)
-    worth_exploring = [o for o in sorted_opps if 40 <= o.get('score', 0) < 60]
+
+    # Worth exploring
+    worth_exploring = [o for o in sorted_opps if minimum_score <= o.get('score', 0) < high_quality_threshold]
     if worth_exploring:
-        md += "## 💡 Worth Exploring (Score 40-59)\n\n"
+        md += f"## 💡 Worth Exploring (Score {minimum_score}-{high_quality_threshold-1})\n\n"
         # Just titles for this tier
-        for opp in worth_exploring[:10]:
+        for opp in worth_exploring[:DIGEST_WORTH_EXPLORING_LIMIT]:
             title = opp['title']
             score = opp['score']
             source = opp['source']
@@ -197,7 +208,7 @@ def main():
         logger.info("=" * 60)
         
         # Load recent opportunities
-        opportunities = load_recent_opportunities(hours=24)
+        opportunities = load_recent_opportunities()
         logger.info(f"Loaded {len(opportunities)} opportunities from last 24h")
         
         if not opportunities:

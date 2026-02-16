@@ -14,7 +14,8 @@ import time
 # Import centralized configuration and utilities
 from config import (
     RAW_DIR, HN_ASK_KEYWORDS, HN_PROMO_INDICATORS, HN_COMMENT_THRESHOLD,
-    REQUEST_TIMEOUT, RETRY_DELAY, BODY_PREVIEW_LENGTH, COLLECTION_HOURS_BACK, LOG_DIR
+    REQUEST_TIMEOUT, RETRY_DELAY, BODY_PREVIEW_LENGTH, COLLECTION_HOURS_BACK, LOG_DIR,
+    HN_ALGOLIA_API_URL, API_PER_PAGE
 )
 from utils import (
     setup_logging, DuplicateDetector, normalize_opportunity
@@ -23,9 +24,6 @@ from usage_tracker import UsageTracker
 
 # Setup logging
 logger = setup_logging(__name__, LOG_DIR / 'hackernews_monitor.log')
-
-# Hacker News API base (Algolia Search)
-HN_ALGOLIA_API_URL = 'https://hn.algolia.com/api/v1/search'
 
 def fetch_hn_ask_hn_stories(hours_back: int, duplicate_detector: DuplicateDetector):
     """Fetch Ask HN stories from Algolia API."""
@@ -42,7 +40,7 @@ def fetch_hn_ask_hn_stories(hours_back: int, duplicate_detector: DuplicateDetect
     query_params = {
         'tags': 'ask_hn',  # Only get "Ask HN" posts
         'numericFilters': f'created_at_i>{cutoff_timestamp}',  # Time filter
-        'hitsPerPage': 100  # Get more results per page
+        'hitsPerPage': API_PER_PAGE  # Get more results per page
     }
     
     # Don't use keyword filtering in the query - it's too restrictive
@@ -131,30 +129,36 @@ def main():
         logger.info("")
 
         duplicate_detector = DuplicateDetector()
-    logger.info("Scanning Ask HN stories via Algolia...")
-    results = fetch_hn_ask_hn_stories(hours_back=COLLECTION_HOURS_BACK, duplicate_detector=duplicate_detector)
-    logger.info(f" ✓ Found {len(results)} new opportunities (duplicates filtered)")
-    
-    # Save seen IDs
-    duplicate_detector.save()
 
-    # Save results
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_file = RAW_DIR / f'hackernews_{timestamp}.json'
-    
-    normalized_opportunities = [normalize_opportunity(item) for item in results]
+        logger.info("Scanning Ask HN stories via Algolia...")
+        results = fetch_hn_ask_hn_stories(hours_back=COLLECTION_HOURS_BACK, duplicate_detector=duplicate_detector)
+        logger.info(f" ✓ Found {len(results)} new opportunities (duplicates filtered)")
 
-    output_data = {
-        'scan_time': datetime.now().isoformat(),
-        'total_opportunities': len(normalized_opportunities),
-        'method': 'Hacker News Algolia Search',
-        'hours_back': COLLECTION_HOURS_BACK,
-        'opportunities': normalized_opportunities
-    }
+        # Save seen IDs
+        duplicate_detector.save()
 
-    with open(output_file, 'w') as f:
-        json.dump(output_data, f, indent=2)
-    
+        # Save results as JSONL
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_file = RAW_DIR / f'hackernews_{timestamp}.jsonl'
+
+        normalized_opportunities = [normalize_opportunity(item) for item in results]
+
+        # Write as JSONL: metadata first, then one opportunity per line
+        with open(output_file, 'w') as f:
+            # First line: metadata
+            metadata = {
+                '_metadata': True,
+                'scan_time': datetime.now().isoformat(),
+                'total_opportunities': len(normalized_opportunities),
+                'method': 'Hacker News Algolia Search',
+                'hours_back': COLLECTION_HOURS_BACK
+            }
+            f.write(json.dumps(metadata) + '\n')
+
+            # Subsequent lines: individual opportunities
+            for opp in normalized_opportunities:
+                f.write(json.dumps(opp) + '\n')
+
         logger.info("")
         logger.info("=" * 60)
         logger.info(f"Summary:")
@@ -162,10 +166,10 @@ def main():
         logger.info(f" Total seen IDs tracked: {len(duplicate_detector.seen_ids)}")
         logger.info(f" Saved to: {output_file}")
         logger.info("=" * 60)
-        
+
         job['items_processed'] = len(results)
-        
-        return str(output_file)
+
+    return str(output_file)
 
 if __name__ == '__main__':
     try:

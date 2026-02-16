@@ -23,9 +23,15 @@ PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 # Load environment variables
+# Try project root first
 ENV_FILE = PROJECT_ROOT / '.env'
 if ENV_FILE.exists():
     load_dotenv(ENV_FILE)
+
+# Also check scripts directory (fallback or override)
+SCRIPTS_ENV = SCRIPT_DIR / '.env'
+if SCRIPTS_ENV.exists():
+    load_dotenv(SCRIPTS_ENV)
 
 # API Configuration
 GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
@@ -120,13 +126,22 @@ HN_PROMO_INDICATORS = [
 ]
 
 # Engagement threshold for high-signal posts
-HN_COMMENT_THRESHOLD = 15  # Increased from 5
+HN_COMMENT_THRESHOLD = int(os.getenv('HN_COMMENT_THRESHOLD', '15'))  # Increased from 5
 
 # API Rate Limiting
-REQUEST_TIMEOUT = 15  # seconds
-API_CALL_DELAY = 1  # seconds between requests
-RETRY_DELAY = 5  # seconds between retries
-API_PER_PAGE = 100  # max results per page
+REQUEST_TIMEOUT = int(os.getenv('REQUEST_TIMEOUT', '15'))  # seconds
+API_CALL_DELAY = int(os.getenv('API_CALL_DELAY', '1'))  # seconds between requests
+RETRY_DELAY = int(os.getenv('RETRY_DELAY', '5'))  # seconds between retries
+API_PER_PAGE = int(os.getenv('API_PER_PAGE', '100'))  # max results per page
+
+# GitHub-specific settings
+GITHUB_RATE_LIMIT_WARNING = int(os.getenv('GITHUB_RATE_LIMIT_WARNING', '10'))
+GITHUB_REACTION_THRESHOLD = int(os.getenv('GITHUB_REACTION_THRESHOLD', '2'))
+GITHUB_REPO_DELAY = int(os.getenv('GITHUB_REPO_DELAY', '3'))  # seconds between repos
+GITHUB_SEARCH_API_URL = os.getenv('GITHUB_SEARCH_API_URL', 'https://api.github.com/search/issues')
+
+# HackerNews API
+HN_ALGOLIA_API_URL = os.getenv('HN_ALGOLIA_API_URL', 'https://hn.algolia.com/api/v1/search')
 
 # Scoring Configuration
 MIN_OPPORTUNITY_SCORE = int(os.getenv('MIN_OPPORTUNITY_SCORE', '50'))
@@ -141,17 +156,28 @@ SCORING_WEIGHTS = {
 }
 
 # User Agent
-USER_AGENT = "OpenClaw SaaS Hunter Bot (feedparser; Contact: github.com/yourusername)"
+USER_AGENT = os.getenv('USER_AGENT', 'OpenClaw SaaS Hunter Bot (feedparser; Contact: github.com/yourusername)')
 
 # Duplicate Detection
 SEEN_IDS_FILE = DATA_DIR / 'seen_ids.json'
 
 # Content Limits
-BODY_PREVIEW_LENGTH = 500  # characters
+BODY_PREVIEW_LENGTH = int(os.getenv('BODY_PREVIEW_LENGTH', '500'))  # characters
 
 # Digest Settings
 DIGEST_TOP_N = int(os.getenv('DIGEST_TOP_N', '5'))
 DIGEST_DAYS_BACK = int(os.getenv('DIGEST_DAYS_BACK', '1'))
+DIGEST_HOURS_BACK = int(os.getenv('DIGEST_HOURS_BACK', '24'))  # Hours for digest lookback
+DIGEST_TOP_TIER_LIMIT = int(os.getenv('DIGEST_TOP_TIER_LIMIT', '5'))
+DIGEST_HIGH_POTENTIAL_LIMIT = int(os.getenv('DIGEST_HIGH_POTENTIAL_LIMIT', '5'))
+DIGEST_WORTH_EXPLORING_LIMIT = int(os.getenv('DIGEST_WORTH_EXPLORING_LIMIT', '10'))
+DIGEST_BODY_PREVIEW = int(os.getenv('DIGEST_BODY_PREVIEW', '200'))  # Preview length in digest
+
+# Telegram Settings
+TELEGRAM_TOP_N = int(os.getenv('TELEGRAM_TOP_N', '3'))  # Top N opportunities for Telegram
 
 # Budget Settings
 MONTHLY_BUDGET_USD = float(os.getenv('MONTHLY_BUDGET_USD', '15.0'))
+
+# Processing Settings
+FUZZY_MATCH_THRESHOLD = int(os.getenv('FUZZY_MATCH_THRESHOLD', '75'))  # % similarity for deduplication

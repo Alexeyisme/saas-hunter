@@ -7,9 +7,18 @@ import sys
 import os
 from pathlib import Path
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
 from fuzzywuzzy import fuzz
 from usage_tracker import UsageTracker
 from utils import setup_logging
+
+# Load environment variables first
+ENV_FILE = Path(__file__).parent.parent / '.env'
+if ENV_FILE.exists():
+    load_dotenv(ENV_FILE)
+SCRIPTS_ENV = Path(__file__).parent / '.env'
+if SCRIPTS_ENV.exists():
+    load_dotenv(SCRIPTS_ENV)
 
 # Setup logging first (needed for LLM check below)
 LOG_DIR = Path(__file__).parent.parent / 'logs'
@@ -61,121 +70,44 @@ def save_last_run_time():
         f.write(datetime.now().isoformat())
 
 def find_new_files(since):
-    """Find raw JSON files created since timestamp"""
+    """Find raw JSONL files created since timestamp"""
     files = []
-    for file in sorted(RAW_DIR.glob('*.json')):
+    for file in sorted(RAW_DIR.glob('*.jsonl')):
         if datetime.fromtimestamp(file.stat().st_mtime) > since:
             files.append(file)
     return files
-
-def score_opportunity(opp):
-    """
-    Score opportunity 0-100 based on multiple signals
-    Pure Python - no LLM calls
-    """
-    score = 0
-    text = (opp.get('title', '') + ' ' + opp.get('body', '')).lower()
-    
-    # 1. Source credibility (max 20 points)
-    source = opp.get('source', '')
-    if source.startswith('github:'):
-        score += 20  # GitHub reactions = validated
-    elif source == 'hackernews':
-        score += 15  # Tech-savvy audience
-    elif source.startswith('reddit:'):
-        # Different subreddits have different signal
-        if 'smallbusiness' in source or 'sysadmin' in source:
-            score += 12  # High signal subreddits
-        else:
-            score += 8
-    
-    # 2. Engagement (max 25 points)
-    engagement = opp.get('engagement_data', {})
-    
-    # GitHub reactions
-    reactions = engagement.get('reactions', 0)
-    score += min(reactions * 2, 15)
-    
-    # Comments (any source)
-    comments = engagement.get('comments', 0)
-    score += min(comments, 10)
-    
-    # HN score
-    hn_score = engagement.get('score', 0)
-    score += min(hn_score, 10)
-    
-    # 3. Pain point clarity (max 20 points)
-    # Strong pain indicators
-    pain_words = ['sick of', 'frustrated', 'hate', 'tired of']
-    if any(p in text for p in pain_words):
-        score += 10
-    
-    # Willingness to pay signals
-    pay_words = ['would pay', 'expensive', 'pricing', 'cost', 'price']
-    if any(p in text for p in pay_words):
-        score += 10
-    
-    # 4. Specificity (max 15 points)
-    body = opp.get('body', '')
-    if len(body) > 300:
-        score += 10
-    elif len(body) > 150:
-        score += 5
-    
-    # Contains numbers/metrics
-    if any(char.isdigit() for char in body):
-        score += 5
-    
-    # 5. Freshness (max 10 points)
-    try:
-        pub_date = datetime.fromisoformat(opp['published_utc'].replace('Z', '+00:00'))
-        age_hours = (datetime.now(pub_date.tzinfo) - pub_date).total_seconds() / 3600
-        
-        if age_hours < 6:
-            score += 10
-        elif age_hours < 24:
-            score += 7
-        elif age_hours < 72:
-            score += 4
-    except:
-        pass
-    
-    # 6. Niche fit (max 10 points)
-    niche_words = ['b2b', 'saas', 'api', 'dev tool', 'developer', 'automation']
-    if any(kw in text for kw in niche_words):
-        score += 10
-    
-    return min(score, 100)
 
 def deduplicate_opportunities(opps):
     """
     Deduplicate using fuzzy title matching
     Keep highest-scored version of duplicates
     """
+    from config import FUZZY_MATCH_THRESHOLD
+
     if not opps:
         return []
-    
+
     unique = []
     seen_titles = []
-    
+
     # Sort by score descending
     opps_sorted = sorted(opps, key=lambda x: x.get('score', 0), reverse=True)
-    
+
     for opp in opps_sorted:
         title = opp.get('title', '').lower()
-        
+
         # Check if similar to any seen title
         is_duplicate = False
         for seen in seen_titles:
             similarity = fuzz.ratio(title, seen)
-            if similarity > 75:  # 75% similar = duplicate (lowered from 85)
+            if similarity > FUZZY_MATCH_THRESHOLD:
                 is_duplicate = True
                 break
-        
+
         if not is_duplicate:
             unique.append(opp)
             seen_titles.append(title)
-    
+
     return unique
 
 def classify_domain(opp):
@@ -243,15 +175,23 @@ def main():
             job['items_processed'] = 0
             return
         
-        # 2. Load all opportunities
+        # 2. Load all opportunities from JSONL files
         all_opps = []
         for file in raw_files:
             try:
+                opps = []
                 with open(file, 'r') as f:
-                    data = json.load(f)
-                    opps = data.get('opportunities', [])
-                    all_opps.extend(opps)
-                    logger.info(f"Loaded {len(opps)} from {file.name}")
+                    for line_num, line in enumerate(f, 1):
+                        try:
+                            data = json.loads(line.strip())
+                            # Skip metadata line
+                            if data.get('_metadata'):
+                                continue
+                            opps.append(data)
+                        except json.JSONDecodeError as e:
+                            logger.warning(f"Failed to parse line {line_num} in {file.name}: {e}")
+                all_opps.extend(opps)
+                logger.info(f"Loaded {len(opps)} from {file.name}")
             except Exception as e:
                 logger.error(f"Error loading {file}: {e}")
         
@@ -269,9 +209,12 @@ def main():
         
         # 3. Score each
         llm_enhanced_count = 0
+        total_llm_cost = 0.0
+        total_tokens = 0
+
         for opp in all_opps:
             base_score = score_opportunity(opp)
-            
+
             # Apply LLM enhancement if enabled and score is promising
             if LLM_ENABLED and base_score >= 45:
                 try:
@@ -280,14 +223,21 @@ def main():
                     if llm_data:
                         opp['llm_analysis'] = llm_data
                         llm_enhanced_count += 1
+                        total_llm_cost += llm_data.get('cost_usd', 0)
+                        total_tokens += llm_data.get('tokens', {}).get('total_tokens', 0)
                 except Exception as e:
                     # LLM failed, use base score
                     logger.debug(f"LLM enhancement skipped for opportunity (using base score): {str(e)[:100]}")
                     opp['score'] = base_score
             else:
                 opp['score'] = base_score
-        
+
         logger.info(f"Scored {len(all_opps)} opportunities ({llm_enhanced_count} LLM-enhanced)")
+        if llm_enhanced_count > 0:
+            logger.info(f"LLM cost: ${total_llm_cost:.6f}, tokens: {total_tokens}")
+            job['cost_usd'] = total_llm_cost
+            job['input_tokens'] = total_tokens  # Approximate
+            job['output_tokens'] = 0
         
         # 4. Deduplicate
         unique_opps = deduplicate_opportunities(all_opps)

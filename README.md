@@ -32,7 +32,7 @@ Each opportunity is **scored 0-100** based on:
 ┌─────────────────────────────────────────────────────────────┐
 │ COLLECTION (Cron)                                           │
 │  Reddit (3h) → HN (4h) → GitHub (daily)                    │
-│  Output: data/raw/SOURCE_YYYYMMDD_HHMMSS.json              │
+│  Output: data/raw/SOURCE_YYYYMMDD_HHMMSS.jsonl             │
 └──────────────────────┬──────────────────────────────────────┘
                        │
                        ▼
@@ -93,12 +93,18 @@ Each opportunity is **scored 0-100** based on:
    # Edit .env with your credentials
    ```
 
+   **Note:** You can place `.env` in either:
+   - Project root: `/saas-hunter/.env`
+   - Scripts directory: `/saas-hunter/scripts/.env` (loaded as fallback/override)
+
    Required:
-   - `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` — [Get here](https://www.reddit.com/prefs/apps)
    - `GITHUB_TOKEN` — [Create token](https://github.com/settings/tokens)
 
-   Optional (Hacker News is public, no auth needed):
-   - `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` — for delivery
+   Optional:
+   - `OPENROUTER_API_KEY` — For LLM-enhanced scoring (Claude Haiku via OpenRouter)
+   - `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` — For Telegram delivery
+
+   **Note:** Reddit and Hacker News use public RSS/API endpoints (no auth needed)
 
 4. **Test collectors:**
    ```bash
@@ -148,7 +154,7 @@ saas-hunter/
 │   ├── scoring.py                 # Scoring algorithm
 │   └── utils.py                   # Helper functions
 ├── data/
-│   ├── raw/                       # Collected JSON files
+│   ├── raw/                       # Collected JSONL files (unified format)
 │   ├── processed/                 # Scored opportunities (JSONL)
 │   ├── digests/                   # Daily markdown summaries
 │   ├── telegram_outbox/           # Pending Telegram messages
@@ -257,6 +263,61 @@ GITHUB_TOPICS = [
     'automation'
 ]
 ```
+
+---
+
+## 📄 Data Format
+
+All data files use **JSONL (JSON Lines)** format for consistency and streaming efficiency:
+
+**Raw collection files** (`data/raw/*.jsonl`):
+
+```jsonl
+{"_metadata": true, "scan_time": "2026-02-15T18:57:11", "total_opportunities": 8, "method": "RSS"}
+{"source_id": "abc123", "source": "reddit:SaaS", "title": "Looking for Zapier alternative", ...}
+{"source_id": "def456", "source": "reddit:Entrepreneur", "title": "Frustrated with email tools", ...}
+```
+
+**Processed files** (`data/processed/*.jsonl`):
+
+```jsonl
+{"source_id": "abc123", "title": "...", "score": 85, "domain": "automation", ...}
+{"source_id": "def456", "title": "...", "score": 72, "domain": "communication", ...}
+```
+
+**Benefits:**
+
+- ✅ Stream-friendly (process line-by-line)
+- ✅ Append-friendly (no need to rewrite entire file)
+- ✅ Tool compatible (`jq`, `awk`, `grep`)
+- ✅ Parallel processing ready
+
+---
+
+## 🤖 LLM Enhancement (Optional)
+
+Enable AI-powered scoring refinement using Claude Haiku:
+
+1. **Set API key** in `.env`:
+
+   ```bash
+   OPENROUTER_API_KEY=your_key_here
+   ```
+
+2. **How it works:**
+   - Base scoring: Rule-based (always active)
+   - LLM enhancement: Kicks in for promising opportunities (score ≥45)
+   - Final score: 60% rule-based + 40% LLM adjustment
+   - Model: Claude Haiku via OpenRouter (~$0.0003 per opportunity)
+
+3. **Cost tracking:**
+
+   ```bash
+   # View usage stats
+   sqlite3 data/usage_stats.db "SELECT * FROM token_usage"
+   ```
+
+**When to enable:** Improves accuracy for nuanced pain points at ~$3-5/month cost.
 
 ---
 
