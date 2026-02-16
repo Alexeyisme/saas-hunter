@@ -10,58 +10,29 @@ Built to find profitable SaaS ideas by tracking real developer and entrepreneur 
 
 SaaS Hunter runs on cron, collecting opportunities from:
 
-- **Reddit** — r/SaaS, r/startups, r/Entrepreneur, r/smallbusiness, r/sales (every 3h)
-- **Hacker News** — Show HN, Ask HN, trending discussions (every 4h)
-- **GitHub** — Trending repos, highly-reacted issues (daily)
+- **Reddit** — 36 subreddits across business, tech, creative (every 6h)
+- **Hacker News** — Ask HN, pain point discussions (every 6h)
+- **GitHub** — 23 high-signal repos, feature requests (weekly)
 
-Each opportunity is **scored 0-100** based on:
-- Source credibility
-- Engagement (upvotes, comments, reactions)
-- Pain point clarity ("sick of", "frustrated")
-- Specificity (detailed problems > vague complaints)
-- Freshness (recent = higher score)
-- Niche fit (B2B SaaS, developer tools)
+**Scoring: 0-100 points**
+- Rule-based (60%): source, engagement, pain keywords, specificity
+- LLM-enhanced (40%): Claude Haiku for promising leads (≥45 base score)
+- Weekly reviews: automated data quality analysis + recommendations
 
-**Daily digest** delivered via Telegram at 8 AM UTC with top opportunities ranked and categorized.
+**Daily digest** via Telegram with top opportunities ranked by score.
 
 ---
 
 ## 📊 Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ COLLECTION (Cron)                                           │
-│  Reddit (3h) → HN (4h) → GitHub (daily)                    │
-│  Output: data/raw/SOURCE_YYYYMMDD_HHMMSS.jsonl             │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-                       ▼
-┌─────────────────────────────────────────────────────────────┐
-│ PROCESSING (Every 6h)                                       │
-│  1. Load new raw files                                      │
-│  2. Score each opportunity (0-100)                          │
-│  3. Deduplicate across sources                              │
-│  4. Enrich with metadata                                    │
-│  Output: data/processed/opportunities_YYYYMMDD.jsonl        │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-                       ▼
-┌─────────────────────────────────────────────────────────────┐
-│ AGGREGATION (Daily 8 AM)                                    │
-│  1. Load last 24h opportunities                             │
-│  2. Rank by score                                           │
-│  3. Group by domain                                         │
-│  4. Generate digest                                         │
-│  Output: data/digests/digest_YYYYMMDD.md                    │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-                       ▼
-┌─────────────────────────────────────────────────────────────┐
-│ DELIVERY                                                     │
-│  Telegram bot → top 3-5 opportunities                       │
-│  (via OpenClaw heartbeat polling)                           │
-└─────────────────────────────────────────────────────────────┘
+COLLECT → VALIDATE → SCORE → DEDUPE → DIGEST → DELIVER
+(6h)      (LLM opt)  (weekly review)    (daily)  (Telegram)
 ```
+
+**Files:** JSONL (streamable, append-friendly)  
+**Quality:** Automated weekly reviews + continuous expansion  
+**Cost:** <$0.01/month (massive headroom)
 
 ---
 
@@ -144,26 +115,21 @@ Each opportunity is **scored 0-100** based on:
 ```
 saas-hunter/
 ├── scripts/
-│   ├── reddit_monitor.py          # Reddit collector
-│   ├── hackernews_monitor.py      # HN collector
-│   ├── github_monitor.py          # GitHub collector
-│   ├── process_opportunities.py   # Scoring + deduplication
-│   ├── generate_digest.py         # Daily aggregation
-│   ├── send_telegram_openclaw.py  # Telegram delivery
-│   ├── config.py                  # Shared configuration
-│   ├── scoring.py                 # Scoring algorithm
-│   └── utils.py                   # Helper functions
+│   ├── *_monitor.py           # Collectors (Reddit, HN, GitHub)
+│   ├── process_opportunities.py  # Validate, score, dedupe
+│   ├── validate.py            # Data quality checks
+│   ├── llm_scorer.py          # Claude Haiku enhancement
+│   ├── weekly_review.py       # Automated quality analysis
+│   ├── config.py              # 36 subreddits, 74 keywords, 23 repos
+│   └── scoring.py             # Rule-based algorithm
 ├── data/
-│   ├── raw/                       # Collected JSONL files (unified format)
-│   ├── processed/                 # Scored opportunities (JSONL)
-│   ├── digests/                   # Daily markdown summaries
-│   ├── telegram_outbox/           # Pending Telegram messages
-│   └── seen_ids.json              # Deduplication tracking
-├── logs/                          # Cron execution logs
-├── scoring_config.json            # Scoring weights/thresholds
-├── .env                           # API credentials (git-ignored)
-├── .env.example                   # Template for credentials
-└── README.md                      # This file
+│   ├── raw/                   # JSONL collections
+│   ├── processed/             # Scored JSONL
+│   ├── reports/               # Weekly reviews
+│   └── digests/               # Daily summaries
+├── scoring_config.json        # Weights, LLM config
+├── EXPANSION_PLAN.md          # Phase 1→2→3 roadmap
+└── README.md
 ```
 
 ---
@@ -341,41 +307,31 @@ wc -l data/processed/opportunities_$(date +%Y%m%d).jsonl
 
 ## 💰 Cost
 
-**Current setup: $0/month**
+**Current: $0.0005/week (~$0.002/month)**
 
-- Reddit API: Free tier (60 requests/min)
-- GitHub API: Free tier (5,000 requests/hour)
-- Hacker News: Public RSS, no auth
-- Storage: ~5 MB/day (~150 MB/month)
-- Compute: Runs on your server/VPS
+- Reddit/HN: RSS/public APIs (free)
+- GitHub API: Free tier
+- LLM scoring: Claude Haiku via OpenRouter (~5 opps/week enhanced)
+- Storage: ~5 MB/day
 
-Designed to fit within a **$15/month** budget if you add paid features later (e.g., OpenAI for clustering).
-
----
-
-## 📈 Example Output
-
-**Real digest from Feb 15, 2026:**
-
-- **39 opportunities** collected
-- **2 high-quality** (60+ score)
-- **10 worth exploring** (40-59 score)
-
-Top find:
-> "6 years in sales, moving to SF in 5 months. How would you approach this?" (65.8 pts)  
-> Signal: Career transition pain point, location-specific networking needs
+**Budget:** $15/month target, <1% utilized. Can scale 100x+.
 
 ---
 
-## 🤝 Contributing
+## 📈 Current Status (Feb 16, 2026)
 
-Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md).
+**Week 1 baseline:**
+- 323 opportunities collected
+- 7 high-quality (60+), 0 top-tier (80+)
+- Avg score: 36.6
+- Phase 1 expansion: 13→36 subreddits, 18→74 keywords, 12→23 repos
 
-**Areas for improvement:**
-- Better deduplication (ML-based clustering)
-- Domain classification (auto-categorize by industry)
-- Sentiment analysis (detect urgency/willingness to pay)
-- Web dashboard for browsing opportunities
+**Automated:**
+- Weekly reviews (Mondays 9 AM)
+- Phase 2 expansion (Feb 23)
+- Phase 3 decision (Mar 2)
+
+**Philosophy:** Start broad, refine based on data. See `EXPANSION_PLAN.md`.
 
 ---
 
@@ -403,4 +359,4 @@ MIT License - see [LICENSE](LICENSE)
 
 **Built to help developers find profitable SaaS ideas by listening to what people actually need.**
 
-*Last updated: Feb 15, 2026*
+*Last updated: Feb 16, 2026*

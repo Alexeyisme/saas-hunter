@@ -42,12 +42,24 @@ GITHUB_HOURS_BACK = int(os.getenv('GITHUB_HOURS_BACK', COLLECTION_HOURS_BACK))
 
 # Reddit Settings
 REDDIT_SUBREDDITS = [
-    # Current sources
+    # Original sources
     'SaaS', 'Entrepreneur', 'smallbusiness', 'sysadmin',
-    # Phase 1 expansion - high signal sources
     'startups', 'freelance', 'sales', 'marketing', 'webdev',
-    # Existing
-    'productivity', 'ecommerce', 'nocode', 'lowcode', 'saasmarketing'
+    'productivity', 'ecommerce', 'nocode', 'lowcode', 'saasmarketing',
+    
+    # Phase 1 expansion - Business & Entrepreneurship
+    'sweatystartup', 'sidehustle', 'EntrepreneurRideAlong', 'Bootstrapped',
+    'indiebiz', 'growmybusiness', 'digitalnomad', 'Consulting',
+    
+    # Phase 1 - Industry-Specific (high-value)
+    'realestate', 'accounting', 'humanresources', 'recruitinghell',
+    'construction', 'restaurateur',
+    
+    # Phase 1 - Developer & Tech
+    'programming', 'devops', 'selfhosted', 'api',
+    
+    # Phase 1 - Creative & Content
+    'graphic_design', 'videoediting', 'podcasting', 'socialmediamarketing'
 ]
 
 REDDIT_PAIN_KEYWORDS = [
@@ -66,7 +78,37 @@ REDDIT_PAIN_KEYWORDS = [
     
     # Need expressions
     'looking for a tool', 'looking for a saas', 'need a solution',
-    'need something that', 'solution for'
+    'need something that', 'solution for',
+    
+    # Phase 1 expansion - Stronger pain expressions
+    'nightmare to', 'hell to', 'impossible to', 'struggle with',
+    "why doesn't", "nobody makes", "doesn't exist",
+    'manual process', 'spreadsheet hell', 'too many tools',
+    'dying for', 'desperate for', 'broken', 'buggy', 'unreliable',
+    
+    # Workflow issues
+    'takes hours', 'waste of time', 'losing track',
+    'juggling', 'switching between', "can't keep up",
+    'error prone', 'mistakes', 'forgot to',
+    
+    # Budget/pricing signals
+    'overpriced', 'too expensive', "can't afford",
+    'paying too much', 'cheaper alternative',
+    'pricing is insane', 'highway robbery',
+    
+    # Feature requests
+    'missing feature', 'if only it had',
+    'workaround', 'hack', 'duct tape solution',
+    'cobbled together', 'makeshift',
+    
+    # Team/scale pain
+    "doesn't scale", 'outgrew', 'too small for enterprise',
+    'enterprise is overkill', 'too complex for',
+    "team can't figure out", 'onboarding nightmare',
+    
+    # Integration pain
+    "doesn't integrate", 'no api', "can't connect",
+    'sync issues', 'data silos', 'manual export'
 ]
 
 # Spam/self-promotion indicators - skip posts containing these
@@ -96,7 +138,25 @@ GITHUB_REPOSITORIES = [
     'formbricks/formbricks',    # Survey tool
     'documenso/documenso',      # E-signature
     'nocodb/nocodb',            # No-code database
-    'directus/directus'         # Headless CMS
+    'directus/directus',        # Headless CMS
+    
+    # Phase 1 expansion - Developer Tools
+    'vercel/next.js',           # Framework
+    'docker/docker',            # Containers
+    'strapi/strapi',            # Headless CMS
+    'appwrite/appwrite',        # Backend platform
+    'hasura/graphql-engine',    # GraphQL
+    
+    # Phase 1 - SaaS Platforms
+    'appsmith/appsmith',        # Internal tools
+    'budibase/budibase',        # Low-code
+    'tooljet/tooljet',          # Low-code
+    'windmill-labs/windmill',   # Workflow automation
+    
+    # Phase 1 - Business Tools
+    'chatwoot/chatwoot',        # Customer support
+    'twenty/twenty',            # CRM
+    'metabase/metabase'         # BI/Analytics
 ]
 # Note: Cal-com/cal.com removed (422 API errors)
 
@@ -113,8 +173,10 @@ HN_ASK_KEYWORDS = [
     'wish there was', 'does anyone use', 'solution for',
     'why is there no', 'how do you handle',
     
-    # Removed builder-focused terms that appear in self-promotion:
-    # 'build a', 'product for', 'startup idea', 'business model'
+    # Phase 1 expansion
+    "why isn't there", "what's the best", 'how do teams handle',
+    'anyone else annoyed by', 'build vs buy', 'just switched from',
+    'outgrew', 'pain point', 'struggling with'
 ]
 
 # Self-promotion indicators for HN - skip posts containing these
